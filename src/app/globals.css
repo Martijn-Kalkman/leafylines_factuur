@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+:root {
+  --primary: #98E5D8;
+  --primary-dark: #5bc4b3;
+  --secondary: #f5a623;
+  --accent: #3F80ED;
+  --success: #27AE50;
+  --warning: #E2B928;
+  --error: #E85757;
+  --gray1: #333333;
+  --gray2: #4F4F4F;
+  --gray3: #828282;
+  --gray4: #BDBDBD;
+}
+
+body {
+  background: #f5f6fa;
+  color: var(--gray1);
+  font-family: 'Inter', sans-serif;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s;
+  background: var(--primary-dark);
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+.btn-primary:hover { background: #4ab0a0; }
+
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid var(--gray4);
+  color: var(--gray2);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-outline:hover { background: #f0f0f0; }
+.btn-primary:disabled, .btn-outline:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s;
+  background: var(--error);
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+.btn-danger:hover { background: #d74848; }
+
+.icon-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid #f7b3b3;
+  background: #fff5f5;
+  color: var(--error);
+  cursor: pointer;
+}
+.icon-btn-danger:hover { background: #ffe9e9; }
+
+.card {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #f0f0f0;
+  padding: 20px;
+}
+
+input, select, textarea {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  background: white;
+  color: var(--gray1);
+  font-family: inherit;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--primary-dark);
+  box-shadow: 0 0 0 3px rgba(91,196,179,0.15);
+}
+
+table { width: 100%; font-size: 14px; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; font-weight: 500; padding: 8px 12px; color: var(--gray3); }
+td { padding: 8px 12px; }
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}

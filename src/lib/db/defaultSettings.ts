@@ -1,0 +1,32 @@
+export const defaultSettingsData = {
+  documents: [],
+  team: [
+    { id: "1", name: "Martijn Kalkman", phone: "+31 6 10000001", email: "martijn@leafylines.nl", role: "Developer", initials: "MK", color: "#98E5D8", signature: "Martijn Kalkman" },
+    { id: "2", name: "Calvin Hofman", phone: "+31 6 10000002", email: "calvin@leafylines.nl", role: "Designer", initials: "CH", color: "#f5a623", signature: "Calvin Hofman" },
+    { id: "3", name: "Thimo de Haan", phone: "+31 6 10000003", email: "thimo@leafylines.nl", role: "Developer", initials: "TH", color: "#3F80ED", signature: "Thimo de Haan" },
+  ],
+  company: {
+    name: "LeafyLines",
+    address: "Zwanenkade 27",
+    city: "2925 AN Krimpen aan den Ijssel",
+    country: "Nederland",
+    kvk: "90408357",
+    btw: "NL865304506 B01",
+    iban: "NL95 ABNA 0124677509",
+    email: "leafylinesdev@gmail.com",
+    phone: "",
+    website: "",
+    signatureLegalText: "Ondertekening voor akkoord. Door ondertekening bevestigen beide partijen de overeengekomen werkzaamheden en betalingsvoorwaarden.",
+    footerText: "Gelieve het totaalbedrag binnen 14 dagen te voldoen op onze IBAN bankrekeningnummer ten name van LeafyLines onder vermelding van het factuurnummer {id}",
+    defaultHourlyRate: 85,
+  },
+  projects: [],
+  clientNotes: [],
+  lineTemplates: [
+    { id: "tpl-website", title: "Website", product: "Website", description: "Website ontwerp en ontwikkeling", price: 750 },
+    { id: "tpl-hosting", title: "Hosting", product: "Hosting", description: "Maandelijkse hosting", price: 60 },
+    { id: "tpl-email", title: "Email", description: "Zakelijke e-maildienst", product: "Email", price: 30 },
+  ],
+  emailIntegration: { provider: "none", enabled: false, fromEmail: "", apiKey: "", confirmationEmails: [] },
+  supportPolicy: { hoursPerCycle: 4, cycleMonths: 3 },
+};
