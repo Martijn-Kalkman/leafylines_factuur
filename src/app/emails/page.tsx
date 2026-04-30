@@ -5,6 +5,7 @@ import Sidebar from "@/components/Sidebar";
 interface SharedEmailLog {
   id: string;
   createdAt: string;
+  sentAt?: string;
   subject: string;
   to: string;
   kind: "document" | "confirmation";
@@ -34,7 +35,7 @@ export default function EmailsPage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
+      <main className="app-main">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-semibold mb-1" style={{ color: "var(--gray1)" }}>Emails</h1>
@@ -66,7 +67,14 @@ export default function EmailsPage() {
               {emailLogs.map((log) => (
                 <tr key={log.id} className="border-b border-gray-50">
                   <td className="text-xs" style={{ color: "var(--gray3)" }}>
-                    {new Date(log.createdAt).toLocaleString("nl-NL")}
+                    {new Date(log.sentAt || log.createdAt).toLocaleString("nl-NL", {
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })}
                   </td>
                   <td className="text-xs" style={{ color: "var(--gray3)" }}>{log.sentBy || "-"}</td>
                   <td className="text-xs" style={{ color: "var(--gray2)" }}>{log.to}</td>

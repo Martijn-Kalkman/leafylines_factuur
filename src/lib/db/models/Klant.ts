@@ -11,8 +11,6 @@ const klantSchema = new Schema(
     email: { type: String, default: "" },
     phone: { type: String, default: "" },
     notes: { type: String, default: "" },
-    supportHoursRemaining: { type: Number, default: 0 },
-    supportCycleStart: { type: String, default: "" },
     recurringInvoice: { type: Schema.Types.Mixed, default: null },
   },
   { versionKey: false, collection: "klanten" },

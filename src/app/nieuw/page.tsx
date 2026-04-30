@@ -7,7 +7,32 @@ import { useStore, genId, DocType, DocLang, LineItem, TimeEntry } from "@/store/
 import { Plus, Trash2, UserCheck } from "lucide-react";
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
-const emptyItem = (): LineItem => ({ id: uid(), product: "", description: "", price: 0 });
+const emptyItem = (): LineItem => ({ id: uid(), product: "", description: "", quantity: 1, price: 0 });
+type NoteRowType = "header" | "text";
+type NoteRow = { id: string; type: NoteRowType; value: string };
+const emptyNoteRow = (type: NoteRowType = "text"): NoteRow => ({ id: uid(), type, value: "" });
+
+function notesToRows(rawNotes: string): NoteRow[] {
+  const rows = rawNotes
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map<NoteRow>((line) => line.startsWith("## ")
+      ? { id: uid(), type: "header", value: line.slice(3).trim() }
+      : { id: uid(), type: "text", value: line });
+  return rows.length > 0 ? rows : [emptyNoteRow("text")];
+}
+
+function rowsToNotes(rows: NoteRow[]): string {
+  return rows
+    .map((row) => ({ ...row, value: row.value.trim() }))
+    .filter((row) => Boolean(row.value))
+    .map((row) => {
+      return row.type === "header" ? `## ${row.value}` : row.value;
+    })
+    .join("\n");
+}
+
 function plusDays(dateString: string, days: number): string {
   const date = new Date(dateString);
   date.setDate(date.getDate() + days);
@@ -20,14 +45,13 @@ const sec: React.CSSProperties  = { fontSize: 14, fontWeight: 600, color: "var(-
 export default function Nieuw() {
   const router = useRouter();
   const { showToast } = useToast();
-  const { documents: rawDocs, clients: rawClients, team: rawTeam, addDocument, updateDocument, renameDocumentId, lineTemplates, projects, company } = useStore();
+  const { documents: rawDocs, clients: rawClients, addDocument, updateDocument, renameDocumentId, lineTemplates, company } = useStore();
 
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => { setHydrated(true); }, []);
 
   const documents = hydrated ? (rawDocs ?? []) : [];
   const clients   = hydrated ? (rawClients ?? []) : [];
-  const team = hydrated ? (rawTeam ?? []) : [];
   const [editId, setEditId] = useState("");
   const existingDoc = editId ? documents.find((d) => d.id === editId) : undefined;
   const isEditMode = Boolean(existingDoc);
@@ -44,8 +68,8 @@ export default function Nieuw() {
   const [documentIdTouched, setDocumentIdTouched] = useState(false);
   const [lang, setLang]                   = useState<DocLang>("nl");
   const [contact, setContact]             = useState("");
+  const [contactEmail, setContactEmail]   = useState(company.email);
   const [phone, setPhone]                 = useState("");
-  const [projectId, setProjectId]         = useState<string>("");
   const [recurring, setRecurring]         = useState<"none" | "monthly" | "yearly">("none");
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [client, setClient]               = useState("");
@@ -60,22 +84,23 @@ export default function Nieuw() {
   const [timeEntries, setTimeEntries]     = useState<TimeEntry[]>([]);
   const [timeHourlyRate, setTimeHourlyRate] = useState(company.defaultHourlyRate);
   const [btwRate, setBtwRate]             = useState(21);
-  const [notes, setNotes]                 = useState("");
+  const [noteRows, setNoteRows]           = useState<NoteRow[]>([emptyNoteRow("text")]);
   const [signaturesEnabled, setSignaturesEnabled] = useState(false);
   const [payerSignatureLabel, setPayerSignatureLabel] = useState("Handtekening klant");
 
-  const handleContactChange = (name: string) => {
-    setContact(name);
-    const m = team.find((t) => t.name === name);
-    if (m) setPhone(m.phone);
-  };
-
   useEffect(() => {
-    if (!contact && team.length > 0) {
-      setContact(team[0].name);
-      setPhone(team[0].phone);
-    }
-  }, [team, contact]);
+    const loadProfileContact = async () => {
+      const response = await fetch("/api/profile", { cache: "no-store" });
+      if (!response.ok) return;
+      const profile = (await response.json()) as { invoiceEmail?: string; invoicePhone?: string; name?: string; email?: string };
+      if (!isEditMode) {
+        setContact(profile.name || "");
+        setContactEmail(profile.invoiceEmail || profile.email || company.email);
+        setPhone(profile.invoicePhone || "");
+      }
+    };
+    void loadProfileContact();
+  }, [company.email, isEditMode]);
 
   useEffect(() => {
     if (!existingDoc) return;
@@ -84,6 +109,7 @@ export default function Nieuw() {
     setType(existingDoc.type);
     setLang(existingDoc.lang);
     setContact(existingDoc.contact ?? "");
+    setContactEmail(existingDoc.contactEmail ?? company.email);
     setPhone(existingDoc.phone ?? "");
     setClient(existingDoc.client ?? "");
     setClientName(existingDoc.clientName ?? "");
@@ -93,14 +119,13 @@ export default function Nieuw() {
     setDate(existingDoc.date ?? new Date().toISOString().slice(0, 10));
     setDueDate(existingDoc.dueDate ?? plusDays(existingDoc.date ?? new Date().toISOString().slice(0, 10), 14));
     setDueDateTouched(true);
-    setItems(existingDoc.items.length ? existingDoc.items : [emptyItem()]);
+    setItems(existingDoc.items.length ? existingDoc.items.map((item) => ({ ...item, quantity: item.quantity ?? 1 })) : [emptyItem()]);
     setTimeEntries(existingDoc.timeEntries ?? []);
     setTimeHourlyRate(existingDoc.timeHourlyRate ?? company.defaultHourlyRate);
     setBtwRate(existingDoc.btwRate);
-    setNotes(existingDoc.notes ?? "");
+    setNoteRows(notesToRows(existingDoc.notes ?? ""));
     setSignaturesEnabled(Boolean(existingDoc.signaturesEnabled));
     setPayerSignatureLabel(existingDoc.payerSignatureLabel ?? "Handtekening klant");
-    setProjectId(existingDoc.projectId ?? "");
     setRecurring(existingDoc.recurring ?? "none");
   }, [existingDoc?.id, company.defaultHourlyRate]);
 
@@ -118,7 +143,7 @@ export default function Nieuw() {
   const addFromTemplate = (templateId: string) => {
     const t = lineTemplates.find((x) => x.id === templateId);
     if (!t) return;
-    setItems((prev) => [...prev, { id: uid(), product: t.product, description: t.description, price: t.price }]);
+    setItems((prev) => [...prev, { id: uid(), product: t.product, description: t.description, quantity: 1, price: t.price }]);
   };
 
   const handleClientSelect = (id: string) => {
@@ -139,6 +164,12 @@ export default function Nieuw() {
   const removeItem = (id: string) => setItems((p) => p.filter((i) => i.id !== id));
   const addTimeEntry = () =>
     setTimeEntries((prev) => [...prev, { id: uid(), service: "", hours: 0, section: "Backend" }]);
+  const addNoteRow = (type: NoteRowType) => setNoteRows((prev) => [...prev, emptyNoteRow(type)]);
+  const updateNoteRow = (id: string, value: string) => setNoteRows((prev) => prev.map((row) => row.id === id ? { ...row, value } : row));
+  const removeNoteRow = (id: string) => setNoteRows((prev) => {
+    const next = prev.filter((row) => row.id !== id);
+    return next.length > 0 ? next : [emptyNoteRow("text")];
+  });
   const updateTimeEntry = (id: string, field: keyof TimeEntry, value: string | number) =>
     setTimeEntries((prev) => prev.map((t) => (t.id === id ? { ...t, [field]: value } : t)));
   const removeTimeEntry = (id: string) => setTimeEntries((prev) => prev.filter((t) => t.id !== id));
@@ -158,6 +189,7 @@ export default function Nieuw() {
     if (!date)                    errs.push("Datum is verplicht.");
     if (items.every((i) => !i.product.trim())) errs.push("Voeg minimaal één regel toe met een productnaam.");
     if (items.some((i) => i.price < 0))        errs.push("Prijs mag niet negatief zijn.");
+    if (items.some((i) => (i.quantity ?? 1) <= 0)) errs.push("Aantal moet groter zijn dan 0.");
     setErrors(errs);
     return errs.length === 0;
   };
@@ -165,6 +197,7 @@ export default function Nieuw() {
   const handleSubmit = () => {
     if (!validate()) return;
     const trimmedDocumentId = documentId.trim();
+    const normalizedNotes = rowsToNotes(noteRows);
     try {
       if (isEditMode && existingDoc) {
         const currentId = existingDoc.id;
@@ -178,10 +211,9 @@ export default function Nieuw() {
           }
         }
         updateDocument(trimmedDocumentId, {
-          type, lang, date, dueDate, contact, phone, client, clientName, clientAddress, clientCity, clientCountry, items, btwRate, notes, timeEntries, timeHourlyRate,
+          type, lang, date, dueDate, contact, contactEmail, phone, client, clientName, clientAddress, clientCity, clientCountry, items, btwRate, notes: normalizedNotes, timeEntries, timeHourlyRate,
           signaturesEnabled: type === "factuur" ? signaturesEnabled : false,
           payerSignatureLabel,
-          projectId: projectId || null,
           recurring: recurring === "none" ? null : recurring,
           recurringNextDate: recurring === "none" ? null : dueDate || date,
         });
@@ -189,10 +221,9 @@ export default function Nieuw() {
         router.push(`/documenten/${trimmedDocumentId}`);
       } else {
         addDocument({
-          id: trimmedDocumentId, type, lang, status: "concept", date, dueDate, contact, phone, client, clientName, clientAddress, clientCity, clientCountry, items, btwRate, notes, timeEntries, timeHourlyRate,
+          id: trimmedDocumentId, type, lang, status: "concept", date, dueDate, contact, contactEmail, phone, client, clientName, clientAddress, clientCity, clientCountry, items, btwRate, notes: normalizedNotes, timeEntries, timeHourlyRate,
           signaturesEnabled: type === "factuur" ? signaturesEnabled : false,
           payerSignatureLabel,
-          projectId: projectId || null,
           recurring: recurring === "none" ? null : recurring,
           recurringNextDate: recurring === "none" ? null : dueDate || date,
           reminderSent: false,
@@ -201,7 +232,7 @@ export default function Nieuw() {
         showToast("Document succesvol aangemaakt.", "success");
         router.push(`/documenten/${trimmedDocumentId}`);
       }
-    } catch (err) {
+    } catch {
       setErrors(["Er is een fout opgetreden bij het opslaan. Probeer het opnieuw."]);
       showToast("Opslaan mislukt. Controleer de velden.", "error");
     }
@@ -210,7 +241,7 @@ export default function Nieuw() {
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <Sidebar />
-      <main style={{ marginLeft: 220, flex: 1, padding: 32, background: "#f5f6fa" }}>
+      <main className="app-main" style={{ background: "#f5f6fa" }}>
         <h1 style={{ fontSize: 24, fontWeight: 600, color: "var(--gray1)", marginBottom: 24 }}>
           {isEditMode ? `Concept bewerken (${existingDoc?.id})` : "Nieuw document"}
         </h1>
@@ -255,9 +286,11 @@ export default function Nieuw() {
                 </div>
                 <div>
                   <label style={lbl}>Contactpersoon</label>
-                  <select value={contact} onChange={(e) => handleContactChange(e.target.value)}>
-                    {team.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
-                  </select>
+                  <input value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Jouw naam" />
+                </div>
+                <div>
+                  <label style={lbl}>Contact e-mail</label>
+                  <input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="jouw@bedrijf.nl" />
                 </div>
                 <div>
                   <label style={lbl}>Telefoonnummer</label>
@@ -271,13 +304,6 @@ export default function Nieuw() {
                 <div>
                   <label style={lbl}>Vervaldatum</label>
                   <input type="date" value={dueDate} onChange={(e) => { setDueDate(e.target.value); setDueDateTouched(true); }} />
-                </div>
-                <div>
-                  <label style={lbl}>Project</label>
-                  <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-                    <option value="">Geen project</option>
-                    {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
                 </div>
                 <div>
                   <label style={lbl}>Terugkerend</label>
@@ -373,23 +399,39 @@ export default function Nieuw() {
                   </div>
                 </div>
               )}
-              <div style={{ display: "grid", gridTemplateColumns: "3fr 5fr 2fr 32px", gap: 8, marginBottom: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "3fr 5fr 1.4fr 1.8fr 2fr 32px", gap: 8, marginBottom: 6 }}>
                 <span style={{ fontSize: 11, color: "var(--gray3)", fontWeight: 500 }}>Product/service</span>
                 <span style={{ fontSize: 11, color: "var(--gray3)", fontWeight: 500 }}>Artikelomschrijving</span>
+                <span style={{ fontSize: 11, color: "var(--gray3)", fontWeight: 500 }}>Aantal</span>
                 <span style={{ fontSize: 11, color: "var(--gray3)", fontWeight: 500 }}>Stukprijs (€)</span>
+                <span style={{ fontSize: 11, color: "var(--gray3)", fontWeight: 500 }}>Totaal (€)</span>
                 <span />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {items.map((item) => (
-                  <div key={item.id} style={{ display: "grid", gridTemplateColumns: "3fr 5fr 2fr 32px", gap: 8, alignItems: "center" }}>
+                  <div key={item.id} style={{ display: "grid", gridTemplateColumns: "3fr 5fr 1.4fr 1.8fr 2fr 32px", gap: 8, alignItems: "center" }}>
                     <input placeholder="Website" value={item.product}
                       onChange={(e) => updateItem(item.id, "product", e.target.value)}
                       style={{ borderColor: errors.some(e => e.includes("regel")) ? "var(--error)" : undefined }} />
                     <input placeholder="Omschrijving" value={item.description}
                       onChange={(e) => updateItem(item.id, "description", e.target.value)} />
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      placeholder="1"
+                      value={item.quantity ?? 1}
+                      onChange={(e) => updateItem(item.id, "quantity", parseFloat(e.target.value) || 1)}
+                    />
                     <input type="number" placeholder="0.00" value={item.price || ""}
                       onChange={(e) => updateItem(item.id, "price", parseFloat(e.target.value) || 0)}
                       style={{ borderColor: errors.some(e => e.includes("negatief")) ? "var(--error)" : undefined }} />
+                    <input
+                      value={((item.price || 0) * (item.quantity ?? 1)).toFixed(2)}
+                      readOnly
+                      aria-label="Regel totaal"
+                      style={{ background: "#f8fafc", color: "var(--gray2)" }}
+                    />
                     <button onClick={() => removeItem(item.id)}
                       style={{ background: "none", border: "none", cursor: "pointer", color: "var(--gray4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <Trash2 size={14} />
@@ -416,7 +458,47 @@ export default function Nieuw() {
                 </div>
                 <div>
                   <label style={lbl}>Notities (optioneel)</label>
-                  <textarea rows={2} placeholder="Extra opmerkingen..." value={notes} onChange={(e) => setNotes(e.target.value)} />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {noteRows.map((row) => (
+                      <div key={row.id} style={{ display: "grid", gridTemplateColumns: "120px 1fr 32px", gap: 8, alignItems: "center" }}>
+                        <select
+                          value={row.type}
+                          onChange={(e) => {
+                            const type = e.target.value as NoteRowType;
+                            setNoteRows((prev) => prev.map((current) => current.id === row.id ? { ...current, type } : current));
+                          }}
+                        >
+                          <option value="text">Tekstregel</option>
+                          <option value="header">Kop</option>
+                        </select>
+                        <input
+                          placeholder={row.type === "header" ? "Bijv. Betalingsafspraken" : "Extra opmerking..."}
+                          value={row.value}
+                          onChange={(e) => updateNoteRow(row.id, e.target.value)}
+                        />
+                        <button
+                          onClick={() => removeNoteRow(row.id)}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--gray4)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => addNoteRow("text")}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--primary-dark)", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}
+                      >
+                        <Plus size={13} /> Tekstregel
+                      </button>
+                      <button
+                        onClick={() => addNoteRow("header")}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--primary-dark)", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}
+                      >
+                        <Plus size={13} /> Kopregel
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

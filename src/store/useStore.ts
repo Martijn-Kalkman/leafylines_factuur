@@ -8,6 +8,7 @@ export interface LineItem {
   id: string;
   product: string;
   description: string;
+  quantity?: number;
   price: number;
 }
 
@@ -21,14 +22,13 @@ export interface Client {
   email: string;
   phone: string;
   notes: string;
-  supportHoursRemaining: number;
-  supportCycleStart: string;
   recurringInvoice?: {
     enabled: boolean;
     frequency: "monthly" | "quarterly" | "yearly";
     amount: number;
     description: string;
     nextDate: string;
+    nextTime?: string;
     autoSend: boolean;
   };
 }
@@ -41,6 +41,7 @@ export interface Document {
   date: string;
   dueDate: string;
   contact: string;
+  contactEmail?: string;
   phone: string;
   client: string;
   clientName: string;
@@ -52,7 +53,6 @@ export interface Document {
   notes: string;
   signaturesEnabled?: boolean;
   payerSignatureLabel?: string;
-  projectId?: string | null;
   sourceQuoteId?: string | null;
   recurring?: "monthly" | "yearly" | null;
   recurringNextDate?: string | null;
@@ -81,25 +81,12 @@ export interface TeamMember {
   signature?: string;
 }
 
-export type ProjectStatus = "actief" | "afgerond" | "on_hold";
-
-export interface Project {
-  id: string;
-  clientId: string;
-  name: string;
-  status: ProjectStatus;
-  budget: number;
-  notes: string;
-  createdAt: string;
-}
-
 export interface ClientNote {
   id: string;
   clientId: string;
   text: string;
   createdAt: string;
   author: string;
-  supportHoursUsed?: number;
 }
 
 export interface LineTemplate {
@@ -112,12 +99,27 @@ export interface LineTemplate {
 
 export type EmailProvider = "resend" | "sendgrid" | "gmail" | "none";
 
+export interface EmailTemplatePreset {
+  id: string;
+  name: string;
+  documentSubjectTemplate: string;
+  documentHtmlTemplate: string;
+  confirmationHtmlTemplate: string;
+}
+
 export interface EmailIntegration {
   provider: EmailProvider;
   enabled: boolean;
   fromEmail: string;
   apiKey: string;
   confirmationEmails: string[];
+  documentSubjectTemplate: string;
+  documentBodyTemplate: string;
+  confirmationBodyTemplate: string;
+  documentHtmlTemplate: string;
+  confirmationHtmlTemplate: string;
+  templatePresets: EmailTemplatePreset[];
+  selectedTemplatePresetId: string;
 }
 
 export interface EmailLog {
@@ -128,11 +130,6 @@ export interface EmailLog {
   kind: "document" | "confirmation";
   status: "success" | "failed";
   error?: string;
-}
-
-export interface SupportPolicy {
-  hoursPerCycle: number;
-  cycleMonths: number;
 }
 
 export interface CompanySettings {
@@ -152,32 +149,24 @@ export interface CompanySettings {
 }
 
 const DEFAULT_COMPANY: CompanySettings = {
-  name:    "LeafyLines",
-  address: "Zwanenkade 27",
-  city:    "2925 AN Krimpen aan den Ijssel",
-  country: "Nederland",
-  kvk:     "90408357",
-  btw:     "NL865304506 B01",
-  iban:    "NL95 ABNA 0124677509",
-  email:   "leafylinesdev@gmail.com",
+  name:    "",
+  address: "",
+  city:    "",
+  country: "",
+  kvk:     "",
+  btw:     "",
+  iban:    "",
+  email:   "",
   phone:   "",
   website: "",
-  signatureLegalText: "Ondertekening voor akkoord. Door ondertekening bevestigen beide partijen de overeengekomen werkzaamheden en betalingsvoorwaarden.",
-  footerText: "Gelieve het totaalbedrag binnen 14 dagen te voldoen op onze IBAN bankrekeningnummer ten name van LeafyLines onder vermelding van het factuurnummer {id}",
-  defaultHourlyRate: 85,
+  signatureLegalText: "",
+  footerText: "",
+  defaultHourlyRate: 0,
 };
 
-const DEFAULT_TEAM: TeamMember[] = [
-  { id: "1", name: "Martijn Kalkman", phone: "+31 6 10000001", email: "martijn@leafylines.nl", role: "Developer", initials: "MK", color: "#98E5D8", signature: "Martijn Kalkman" },
-  { id: "2", name: "Calvin Hofman",   phone: "+31 6 10000002", email: "calvin@leafylines.nl",  role: "Designer",  initials: "CH", color: "#f5a623", signature: "Calvin Hofman" },
-  { id: "3", name: "Thimo de Haan",   phone: "+31 6 10000003", email: "thimo@leafylines.nl",   role: "Developer", initials: "TH", color: "#3F80ED", signature: "Thimo de Haan" },
-];
+const DEFAULT_TEAM: TeamMember[] = [];
 
-const DEFAULT_TEMPLATES: LineTemplate[] = [
-  { id: "tpl-website", title: "Website", product: "Website", description: "Website ontwerp en ontwikkeling", price: 750 },
-  { id: "tpl-hosting", title: "Hosting", product: "Hosting", description: "Maandelijkse hosting", price: 60 },
-  { id: "tpl-email", title: "Email", description: "Zakelijke e-maildienst", product: "Email", price: 30 },
-];
+const DEFAULT_TEMPLATES: LineTemplate[] = [];
 
 const DEFAULT_EMAIL_INTEGRATION: EmailIntegration = {
   provider: "none",
@@ -185,11 +174,13 @@ const DEFAULT_EMAIL_INTEGRATION: EmailIntegration = {
   fromEmail: "",
   apiKey: "",
   confirmationEmails: [],
-};
-
-const DEFAULT_SUPPORT_POLICY: SupportPolicy = {
-  hoursPerCycle: 4,
-  cycleMonths: 3,
+  documentSubjectTemplate: "",
+  documentBodyTemplate: "",
+  confirmationBodyTemplate: "",
+  documentHtmlTemplate: "",
+  confirmationHtmlTemplate: "",
+  templatePresets: [],
+  selectedTemplatePresetId: "",
 };
 
 interface Store {
@@ -198,12 +189,10 @@ interface Store {
   clients: Client[];
   team: TeamMember[];
   company: CompanySettings;
-  projects: Project[];
   clientNotes: ClientNote[];
   lineTemplates: LineTemplate[];
   emailIntegration: EmailIntegration;
   emailLogs: EmailLog[];
-  supportPolicy: SupportPolicy;
   hasLoadedWorkspace: boolean;
   // Document actions
   addDocument:    (doc: Document) => void;
@@ -220,10 +209,6 @@ interface Store {
   deleteTeamMember: (id: string) => void;
   // Company actions
   updateCompany: (s: Partial<CompanySettings>) => void;
-  // Projects
-  addProject: (project: Project) => void;
-  updateProject: (id: string, project: Partial<Project>) => void;
-  deleteProject: (id: string) => void;
   // Client notes
   addClientNote: (note: ClientNote) => void;
   deleteClientNote: (id: string) => void;
@@ -239,16 +224,16 @@ interface Store {
   // Integrations
   updateEmailIntegration: (integration: Partial<EmailIntegration>) => void;
   addEmailLog: (entry: Omit<EmailLog, "id" | "createdAt">) => void;
-  hydrateWorkspace: (payload: Partial<Pick<Store, "documents" | "clients" | "team" | "company" | "projects" | "clientNotes" | "lineTemplates" | "emailIntegration" | "emailLogs" | "supportPolicy">>) => void;
-  getWorkspacePayload: () => Pick<Store, "documents" | "clients" | "team" | "company" | "projects" | "clientNotes" | "lineTemplates" | "emailIntegration" | "emailLogs" | "supportPolicy">;
-  updateSupportPolicy: (policy: Partial<SupportPolicy>) => void;
-  updateClientSupportHours: (id: string, hours: number) => void;
-  resetClientSupportHoursIfNeeded: (today?: string) => number;
-  resetClientSupportHoursNow: (today?: string) => number;
+  hydrateWorkspace: (payload: Partial<Pick<Store, "documents" | "clients" | "team" | "company" | "clientNotes" | "lineTemplates" | "emailIntegration" | "emailLogs">>) => void;
+  getWorkspacePayload: () => Pick<Store, "documents" | "clients" | "team" | "company" | "clientNotes" | "lineTemplates" | "emailIntegration" | "emailLogs">;
 }
 
 export function calcTotals(items: LineItem[], btwRate: number) {
-  const sub   = items.reduce((s, i) => s + (i.price || 0), 0);
+  const sub   = items.reduce((s, i) => {
+    const quantity = Number(i.quantity ?? 1);
+    const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    return s + (i.price || 0) * safeQuantity;
+  }, 0);
   const tax   = parseFloat((sub * btwRate / 100).toFixed(2));
   const total = parseFloat((sub + tax).toFixed(2));
   return { sub, tax, total };
@@ -258,7 +243,8 @@ export function genId(docs: Document[]): string {
   const year = new Date().getFullYear();
   const nums = docs
     .filter((d) => d.id.includes(String(year)))
-    .map((d) => parseInt(d.id.split("-")[2]));
+    .map((d) => Number.parseInt((d.id.split("-")[2] || "").trim(), 10))
+    .filter((value) => Number.isFinite(value) && value > 0);
   const next = nums.length ? Math.max(...nums) + 1 : 1;
   return `LL-${year}-${String(next).padStart(3, "0")}`;
 }
@@ -270,10 +256,12 @@ function addMonths(dateString: string, months: number): string {
   return next.toISOString().slice(0, 10);
 }
 
-function monthsBetween(start: string, end: string): number {
-  const s = new Date(start);
-  const e = new Date(end);
-  return (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+function isRecurringDue(nextDate: string, nextTime: string | undefined, now: Date): boolean {
+  if (!nextDate) return false;
+  const safeTime = /^\d{2}:\d{2}$/.test(nextTime || "") ? String(nextTime) : "09:00";
+  const dueAt = new Date(`${nextDate}T${safeTime}:00`);
+  if (Number.isNaN(dueAt.getTime())) return nextDate <= now.toISOString().slice(0, 10);
+  return dueAt.getTime() <= now.getTime();
 }
 
 export function daysOverdue(dueDate: string, today = new Date().toISOString().slice(0, 10)): number {
@@ -285,25 +273,11 @@ export function daysOverdue(dueDate: string, today = new Date().toISOString().sl
   return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
 
-export function getYearMonth(date: string): string {
-  return date.slice(0, 7);
-}
-
 export function getQuarter(date: string): string {
   const year = date.slice(0, 4);
   const month = Number(date.slice(5, 7));
   const quarter = Math.floor((month - 1) / 3) + 1;
   return `${year}-Q${quarter}`;
-}
-
-export function omzetPerMaand(docs: Document[]): Record<string, number> {
-  return docs.reduce<Record<string, number>>((acc, d) => {
-    if (d.type !== "factuur" || d.status !== "betaald") return acc;
-    const bucket = getYearMonth(d.date);
-    const { total } = calcTotals(d.items, d.btwRate);
-    acc[bucket] = (acc[bucket] ?? 0) + total;
-    return acc;
-  }, {});
 }
 
 export function btwPerKwartaal(docs: Document[]): Record<string, number> {
@@ -316,25 +290,6 @@ export function btwPerKwartaal(docs: Document[]): Record<string, number> {
   }, {});
 }
 
-export function omzetPerKlant(docs: Document[]): Record<string, number> {
-  return docs.reduce<Record<string, number>>((acc, d) => {
-    if (d.type !== "factuur" || d.status !== "betaald") return acc;
-    const { total } = calcTotals(d.items, d.btwRate);
-    acc[d.client] = (acc[d.client] ?? 0) + total;
-    return acc;
-  }, {});
-}
-
-export function getSupportUsageFromNote(text: string): number {
-  const normalized = text.toLowerCase().replace(",", ".");
-  const hasSupportContext = normalized.includes("support");
-  if (!hasSupportContext) return 0;
-  const match = normalized.match(/(\d+(?:\.\d+)?)\s*uur/);
-  if (!match) return 0;
-  const value = Number(match[1]);
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  return value;
-}
 
 export const useStore = create<Store>()(
   (set, get) => ({
@@ -342,12 +297,10 @@ export const useStore = create<Store>()(
       clients:   [],
       team:      DEFAULT_TEAM,
       company:   DEFAULT_COMPANY,
-      projects: [],
       clientNotes: [],
       lineTemplates: DEFAULT_TEMPLATES,
       emailIntegration: DEFAULT_EMAIL_INTEGRATION,
       emailLogs: [],
-      supportPolicy: DEFAULT_SUPPORT_POLICY,
       hasLoadedWorkspace: false,
 
       addDocument:    (doc)     => set((s) => ({ documents: [...s.documents, doc] })),
@@ -380,22 +333,9 @@ export const useStore = create<Store>()(
       deleteTeamMember: (id)    => set((s) => ({ team: s.team.filter((m) => m.id !== id) })),
 
       updateCompany: (u) => set((s) => ({ company: { ...s.company, ...u } })),
-      addProject: (project) => set((s) => ({ projects: [...s.projects, project] })),
-      updateProject: (id, u) => set((s) => ({ projects: s.projects.map((p) => p.id === id ? { ...p, ...u } : p) })),
-      deleteProject: (id) => set((s) => ({
-        projects: s.projects.filter((p) => p.id !== id),
-        documents: s.documents.map((d) => d.projectId === id ? { ...d, projectId: null } : d),
+      addClientNote: (note) => set((s) => ({
+        clientNotes: [note, ...s.clientNotes],
       })),
-      addClientNote: (note) => set((s) => {
-        const supportUsed = getSupportUsageFromNote(note.text);
-        return {
-          clientNotes: [{ ...note, supportHoursUsed: supportUsed || undefined }, ...s.clientNotes],
-          clients: s.clients.map((c) => {
-            if (c.id !== note.clientId || supportUsed <= 0) return c;
-            return { ...c, supportHoursRemaining: Math.max(0, c.supportHoursRemaining - supportUsed) };
-          }),
-        };
-      }),
       deleteClientNote: (id) => set((s) => ({ clientNotes: s.clientNotes.filter((n) => n.id !== id) })),
       addLineTemplate: (template) => set((s) => ({ lineTemplates: [...s.lineTemplates, template] })),
       updateLineTemplate: (id, u) => set((s) => ({ lineTemplates: s.lineTemplates.map((t) => t.id === id ? { ...t, ...u } : t) })),
@@ -458,11 +398,13 @@ export const useStore = create<Store>()(
       },
       generateClientRecurringInvoices: (today = new Date().toISOString().slice(0, 10)) => {
         const createdIds: string[] = [];
+        const now = new Date();
         set((s) => {
           const toAdd: Document[] = [];
           const nextClients = s.clients.map((client) => {
             const recurring = client.recurringInvoice;
-            if (!recurring?.enabled || !recurring.nextDate || recurring.nextDate > today) return client;
+            if (!recurring?.enabled || !recurring.nextDate) return client;
+            if (!isRecurringDue(recurring.nextDate, recurring.nextTime, now)) return client;
             const amount = Number(recurring.amount) || 0;
             if (amount <= 0) return client;
             const newId = genId([...s.documents, ...toAdd]);
@@ -484,7 +426,6 @@ export const useStore = create<Store>()(
               items: [{ id: `rec-${newId}`, product: "Periodieke factuur", description, price: amount }],
               btwRate: 21,
               notes: "Automatisch aangemaakt op basis van klant-instelling.",
-              projectId: null,
               recurring: null,
               recurringNextDate: null,
               reminderSent: false,
@@ -499,6 +440,7 @@ export const useStore = create<Store>()(
               recurringInvoice: {
                 ...recurring,
                 nextDate: addMonths(recurring.nextDate, monthStep),
+                nextTime: recurring.nextTime || "09:00",
               },
             };
           });
@@ -520,22 +462,28 @@ export const useStore = create<Store>()(
       hydrateWorkspace: (payload) => set(() => ({
         documents: (payload.documents ?? []).map((d) => ({
           ...d,
+          items: (d.items ?? []).map((item) => ({
+            ...item,
+            quantity: Number(item.quantity ?? 1) || 1,
+          })),
           timeEntries: d.timeEntries ?? [],
           timeHourlyRate: d.timeHourlyRate ?? DEFAULT_COMPANY.defaultHourlyRate,
         })),
         clients: (payload.clients ?? []).map((c) => ({
           ...c,
-          supportHoursRemaining: c.supportHoursRemaining ?? DEFAULT_SUPPORT_POLICY.hoursPerCycle,
-          supportCycleStart: c.supportCycleStart ?? new Date().toISOString().slice(0, 10),
+          recurringInvoice: c.recurringInvoice
+            ? {
+                ...c.recurringInvoice,
+                nextTime: c.recurringInvoice.nextTime || "09:00",
+              }
+            : c.recurringInvoice,
         })),
         team: payload.team ?? DEFAULT_TEAM,
         company: { ...DEFAULT_COMPANY, ...(payload.company ?? {}) },
-        projects: payload.projects ?? [],
         clientNotes: payload.clientNotes ?? [],
         lineTemplates: payload.lineTemplates ?? DEFAULT_TEMPLATES,
         emailIntegration: { ...DEFAULT_EMAIL_INTEGRATION, ...(payload.emailIntegration ?? {}) },
         emailLogs: payload.emailLogs ?? [],
-        supportPolicy: { ...DEFAULT_SUPPORT_POLICY, ...(payload.supportPolicy ?? {}) },
         hasLoadedWorkspace: true,
       })),
       getWorkspacePayload: () => {
@@ -545,50 +493,11 @@ export const useStore = create<Store>()(
           clients: state.clients,
           team: state.team,
           company: state.company,
-          projects: state.projects,
           clientNotes: state.clientNotes,
           lineTemplates: state.lineTemplates,
           emailIntegration: state.emailIntegration,
           emailLogs: state.emailLogs,
-          supportPolicy: state.supportPolicy,
         };
-      },
-      updateSupportPolicy: (u) => set((s) => ({ supportPolicy: { ...s.supportPolicy, ...u } })),
-      updateClientSupportHours: (id, hours) => set((s) => ({
-        clients: s.clients.map((c) => c.id === id ? { ...c, supportHoursRemaining: Math.max(0, hours) } : c),
-      })),
-      resetClientSupportHoursIfNeeded: (today = new Date().toISOString().slice(0, 10)) => {
-        let resetCount = 0;
-        set((s) => ({
-          clients: s.clients.map((c) => {
-            if (!c.supportCycleStart) {
-              return { ...c, supportCycleStart: today, supportHoursRemaining: s.supportPolicy.hoursPerCycle };
-            }
-            const elapsed = monthsBetween(c.supportCycleStart, today);
-            if (elapsed < s.supportPolicy.cycleMonths) return c;
-            resetCount++;
-            return {
-              ...c,
-              supportHoursRemaining: s.supportPolicy.hoursPerCycle,
-              supportCycleStart: today,
-            };
-          }),
-        }));
-        return resetCount;
-      },
-      resetClientSupportHoursNow: (today = new Date().toISOString().slice(0, 10)) => {
-        let resetCount = 0;
-        set((s) => ({
-          clients: s.clients.map((c) => {
-            resetCount++;
-            return {
-              ...c,
-              supportHoursRemaining: s.supportPolicy.hoursPerCycle,
-              supportCycleStart: today,
-            };
-          }),
-        }));
-        return resetCount;
       },
     })
 );

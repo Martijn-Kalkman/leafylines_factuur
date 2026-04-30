@@ -11,11 +11,12 @@ export async function GET() {
   if (!rate.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429 });
 
   await connectToDatabase();
-  const logs = await EmailLogModel.find().sort({ createdAt: -1 }).limit(2000).lean();
+  const logs = await EmailLogModel.find().sort({ sentAt: -1, createdAt: -1 }).limit(2000).lean();
   return NextResponse.json({
     emailLogs: logs.map((log) => ({
       id: String(log._id),
       createdAt: log.createdAt,
+      sentAt: (log as { sentAt?: string }).sentAt || log.createdAt,
       subject: log.subject,
       to: log.to,
       kind: log.kind,

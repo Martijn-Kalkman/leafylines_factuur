@@ -4,25 +4,37 @@ import { useParams, useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import ConfirmModal from "@/components/ConfirmModal";
 import { useToast } from "@/components/ToastProvider";
-import { useStore, DocStatus, daysOverdue } from "@/store/useStore";
+import { useStore, calcTotals, DocStatus, daysOverdue } from "@/store/useStore";
 import { generatePdf, generatePdfBlob, generatePdfBlobUrl } from "@/lib/generatePdf";
 import { downloadTimeRegistrationCsv, generateTimeRegistrationPdf } from "@/lib/generateTimeRegistration";
-import { ArrowLeft, Download, Trash2, BellRing, Repeat, Mail } from "lucide-react";
+import { renderEmailTemplate } from "@/lib/emailTemplates";
+import { htmlToPlainText, sanitizeHtmlEmail } from "@/lib/htmlEmail";
+import { ArrowLeft, Download, Trash2, Repeat, Mail } from "lucide-react";
 
 const STATUSES: DocStatus[] = ["concept", "verzonden", "openstaand", "betaald"];
+const FALLBACK_DOCUMENT_SUBJECT_TEMPLATE = "Factuur {documentId}";
+const FALLBACK_DOCUMENT_HTML_TEMPLATE = "<p>Beste {clientName},</p><p>In de bijlage vind je factuur <strong>{documentId}</strong>.</p><p>Met vriendelijke groet,<br />{contactName}</p>";
+const FALLBACK_CONFIRMATION_HTML_TEMPLATE = "<p>Document <strong>{documentId}</strong> is verzonden naar <a href=\"mailto:{toEmail}\">{toEmail}</a> op {sentAt}.</p>";
 
 export default function DocDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { documents, updateDocument, deleteDocument, company, markReminderSent, convertQuoteToInvoice, projects, team } = useStore();
+  const { documents, clients, updateDocument, deleteDocument, company, convertQuoteToInvoice, team, emailIntegration } = useStore();
   const doc = documents.find((d) => d.id === id);
-  const project = doc?.projectId ? projects.find((p) => p.id === doc.projectId) : null;
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [sendEmailOpen, setSendEmailOpen] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [manualEmail, setManualEmail] = useState("");
+  const [overrideRecipient, setOverrideRecipient] = useState(false);
   const [timeExportFormat, setTimeExportFormat] = useState<"pdf" | "csv">("pdf");
   const { showToast } = useToast();
   const canEdit = doc?.status === "concept";
   const linkedTimeEntries = doc?.timeEntries ?? [];
+  const suggestedClients = clients.filter((client) => !doc || client.company === doc.client || client.contactName === doc.clientName);
+  const defaultClient = suggestedClients.find((client) => !doc || client.company === doc.client) ?? suggestedClients[0];
+  const selectedClient = suggestedClients.find((client) => client.id === selectedClientId);
+  const defaultRecipient = (defaultClient?.email || "").trim();
 
   useEffect(() => {
     let active = true;
@@ -62,13 +74,13 @@ export default function DocDetail() {
     }
   };
 
-  if (!doc) return <div className="ml-56 p-8">Document niet gevonden.</div>;
+  if (!doc) return <div className="app-fallback">Document niet gevonden.</div>;
 
 
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
+      <main className="app-main">
         <div className="flex items-center gap-4 mb-6">
           <button onClick={() => router.back()} className="btn-outline flex items-center gap-2">
             <ArrowLeft size={14} /> Terug
@@ -109,9 +121,114 @@ export default function DocDetail() {
           {(
             <button
               className="btn-outline flex items-center gap-2"
-              onClick={async () => {
-                const to = window.prompt("Ontvanger e-mail", "");
-                if (!to) return;
+              onClick={() => {
+                const firstWithEmail = suggestedClients.find((client) => client.email) ?? defaultClient;
+                setSelectedClientId(firstWithEmail?.id ?? "");
+                setManualEmail("");
+                setOverrideRecipient(false);
+                setSendEmailOpen(true);
+              }}
+            >
+              <Mail size={14} /> Stuur per e-mail
+            </button>
+          )}
+          {doc.type === "offerte" && (
+            <button className="btn-outline flex items-center gap-2" onClick={handleConvert}>
+              <Repeat size={14} /> Zet om naar factuur
+            </button>
+          )}
+          <button onClick={() => setDeleteOpen(true)} className="btn-danger flex items-center gap-2">
+            <Trash2 size={14} /> Verwijderen
+          </button>
+        </div>
+        <ConfirmModal
+          open={deleteOpen}
+          title="Document verwijderen"
+          message={`Weet je zeker dat je ${doc.id} wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.`}
+          confirmLabel="Ja, verwijderen"
+          onCancel={() => setDeleteOpen(false)}
+          onConfirm={() => { setDeleteOpen(false); handleDelete(); }}
+        />
+        <ConfirmModal
+          open={sendEmailOpen}
+          title="Document per e-mail versturen"
+          message={
+            <div style={{ marginTop: 10 }}>
+              <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, border: "1px solid #e5e7eb", background: "#f8fafc" }}>
+                <p style={{ fontSize: 12, color: "var(--gray3)", marginBottom: 4 }}>Standaard ontvanger (gekoppelde klant)</p>
+                <p style={{ fontSize: 14, color: "var(--gray1)", fontWeight: 600 }}>
+                  {defaultRecipient || "Geen e-mailadres gevonden voor deze klant"}
+                </p>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, fontSize: 13, color: "var(--gray2)" }}>
+                <input
+                  type="checkbox"
+                  checked={overrideRecipient}
+                  onChange={(e) => setOverrideRecipient(e.target.checked)}
+                />
+                Ik wil naar een andere ontvanger sturen
+              </label>
+              {overrideRecipient && suggestedClients.length > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 12, color: "var(--gray3)", display: "block", marginBottom: 4 }}>Klant selecteren</label>
+                  <select value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)}>
+                    {suggestedClients.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.company}{client.contactName ? ` (${client.contactName})` : ""}{client.email ? ` - ${client.email}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {overrideRecipient && (
+                <>
+                  <label style={{ fontSize: 12, color: "var(--gray3)", display: "block", marginBottom: 4 }}>Of vul e-mailadres handmatig in</label>
+                  <input
+                    value={manualEmail}
+                    onChange={(e) => setManualEmail(e.target.value)}
+                    placeholder={selectedClient?.email || "naam@bedrijf.nl"}
+                  />
+                </>
+              )}
+            </div>
+          }
+          confirmLabel="Versturen"
+          onCancel={() => setSendEmailOpen(false)}
+          onConfirm={async () => {
+            const to = overrideRecipient
+              ? (manualEmail.trim() || selectedClient?.email || "").trim()
+              : defaultRecipient;
+            if (!to) {
+              showToast(
+                overrideRecipient
+                  ? "Selecteer een klant met e-mailadres of vul handmatig een e-mail in."
+                  : "Deze klant heeft geen e-mailadres. Vink 'andere ontvanger' aan om handmatig te kiezen.",
+                "error",
+              );
+              return;
+            }
+            try {
+                const sentAt = new Date();
+                const dueDateFromEmailSend = new Date(sentAt);
+                dueDateFromEmailSend.setDate(dueDateFromEmailSend.getDate() + 14);
+                const templateContext = {
+                  documentId: doc.id,
+                  clientName: doc.clientName || doc.client,
+                  clientCompany: doc.client,
+                  contactName: doc.contact || "LeafyLines",
+                  toEmail: to,
+                  sentAt: sentAt.toLocaleString("nl-NL"),
+                  naam: doc.clientName || doc.client,
+                  factuurnummer: doc.id,
+                  factuurdatum: doc.date,
+                  vervaldatum: dueDateFromEmailSend.toLocaleDateString("nl-NL"),
+                  bedrag: calcTotals(doc.items, doc.btwRate).total.toFixed(2),
+                  adres: `${company.address}, ${company.city}, ${company.country}`,
+                  email: company.email,
+                  telefoon: company.phone,
+                  kvk: company.kvk,
+                  btw: company.btw,
+                } as const;
                 const signature = team.find((m) => m.name === doc.contact)?.signature;
                 const pdfBlob = await generatePdfBlob(doc, company, signature);
                 const attachmentBase64 = await new Promise<string>((resolve, reject) => {
@@ -130,9 +247,28 @@ export default function DocDetail() {
                 });
                 const payload = {
                   to,
-                  subject: `${doc.type === "factuur" ? "Factuur" : "Offerte"} ${doc.id}`,
-                  text: `Beste ${doc.clientName || doc.client},\n\nIn de bijlage vind je ${doc.type} ${doc.id}.\n\nMet vriendelijke groet,\n${doc.contact}`,
-                  confirmationText: `Document ${doc.id} is verzonden naar ${to}.`,
+                  sendConfirmation: true,
+                  subject: renderEmailTemplate(emailIntegration.documentSubjectTemplate || FALLBACK_DOCUMENT_SUBJECT_TEMPLATE, templateContext),
+                  html: sanitizeHtmlEmail(renderEmailTemplate(emailIntegration.documentHtmlTemplate || FALLBACK_DOCUMENT_HTML_TEMPLATE, templateContext)),
+                  text: htmlToPlainText(renderEmailTemplate(emailIntegration.documentHtmlTemplate || FALLBACK_DOCUMENT_HTML_TEMPLATE, templateContext)),
+                  confirmationHtml: sanitizeHtmlEmail(renderEmailTemplate(emailIntegration.confirmationHtmlTemplate || FALLBACK_CONFIRMATION_HTML_TEMPLATE, {
+                    documentId: doc.id,
+                    clientName: doc.clientName || doc.client,
+                    clientCompany: doc.client,
+                    contactName: doc.contact || "LeafyLines",
+                    toEmail: to,
+                    sentAt: new Date().toLocaleString("nl-NL"),
+                    factuurnummer: doc.id,
+                  })),
+                  confirmationText: htmlToPlainText(renderEmailTemplate(emailIntegration.confirmationHtmlTemplate || FALLBACK_CONFIRMATION_HTML_TEMPLATE, {
+                    documentId: doc.id,
+                    clientName: doc.clientName || doc.client,
+                    clientCompany: doc.client,
+                    contactName: doc.contact || "LeafyLines",
+                    toEmail: to,
+                    sentAt: new Date().toLocaleString("nl-NL"),
+                    factuurnummer: doc.id,
+                  })),
                   attachmentBase64,
                   attachmentFileName: `${doc.id}.pdf`,
                   attachmentMimeType: "application/pdf",
@@ -147,42 +283,18 @@ export default function DocDetail() {
                   showToast(data?.error || "E-mail verzenden mislukt.", "error");
                   return;
                 }
+                setSendEmailOpen(false);
                 showToast("E-mail verzonden.", "success");
-              }}
-            >
-              <Mail size={14} /> Stuur per e-mail
-            </button>
-          )}
-          {doc.type === "offerte" && (
-            <button className="btn-outline flex items-center gap-2" onClick={handleConvert}>
-              <Repeat size={14} /> Zet om naar factuur
-            </button>
-          )}
-          {doc.status === "openstaand" && (
-            <button className="btn-outline flex items-center gap-2" onClick={() => { markReminderSent(doc.id); showToast("Herinnering gemarkeerd als verzonden.", "success"); }}>
-              <BellRing size={14} /> Herinnering verzonden
-            </button>
-          )}
-          <button onClick={() => setDeleteOpen(true)} className="btn-danger flex items-center gap-2">
-            <Trash2 size={14} /> Verwijderen
-          </button>
-        </div>
-        <ConfirmModal
-          open={deleteOpen}
-          title="Document verwijderen"
-          message={`Weet je zeker dat je ${doc.id} wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.`}
-          confirmLabel="Ja, verwijderen"
-          onCancel={() => setDeleteOpen(false)}
-          onConfirm={() => { setDeleteOpen(false); handleDelete(); }}
+            } catch {
+              showToast("E-mail verzenden mislukt.", "error");
+            }
+          }}
         />
-        {(project || (doc.status === "openstaand" && daysOverdue(doc.dueDate) > 0)) && (
+        {doc.status === "openstaand" && daysOverdue(doc.dueDate) > 0 && (
           <div className="card max-w-3xl mx-auto mb-4 text-xs flex justify-between">
-            <span style={{ color: "var(--gray3)" }}>
-              {project ? `Project: ${project.name} (${project.status})` : "Geen project"}
-            </span>
+            <span style={{ color: "var(--gray3)" }}>Betaalstatus</span>
             <span style={{ color: "var(--gray3)" }}>
               {doc.status === "openstaand" && daysOverdue(doc.dueDate) > 0 ? `${daysOverdue(doc.dueDate)} dagen over vervaldatum` : "Op tijd"}
-              {doc.reminderSent ? " • herinnering verzonden" : ""}
             </span>
           </div>
         )}

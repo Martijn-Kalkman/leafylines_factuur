@@ -14,31 +14,15 @@ export async function GET() {
   if (!rate.allowed) return NextResponse.json({ error: "Too many settings requests." }, { status: 429 });
 
   await connectToDatabase();
-  let settings = await SettingModel.findOne({ key: "global" }).lean();
-  if (!settings) {
-    settings = await SettingModel.create({
-      key: "global",
-      documents: defaultSettingsData.documents,
-      team: defaultSettingsData.team,
-      company: defaultSettingsData.company,
-      projects: defaultSettingsData.projects,
-      clientNotes: defaultSettingsData.clientNotes,
-      lineTemplates: defaultSettingsData.lineTemplates,
-      emailIntegration: defaultSettingsData.emailIntegration,
-      supportPolicy: defaultSettingsData.supportPolicy,
-    });
-    settings = settings.toObject();
-  }
+  const settings = await SettingModel.findOne({ key: "global" }).lean();
 
   return NextResponse.json({
     documents: settings.documents ?? [],
     team: settings.team ?? [],
     company: settings.company ?? {},
-    projects: settings.projects ?? [],
     clientNotes: settings.clientNotes ?? [],
     lineTemplates: settings.lineTemplates ?? [],
     emailIntegration: settings.emailIntegration ?? {},
-    supportPolicy: settings.supportPolicy ?? {},
   });
 }
 
@@ -47,7 +31,9 @@ export async function PUT(request: Request) {
   if (originGuard) return originGuard;
   const user = await requireAuth();
   if (user instanceof NextResponse) return user;
-  const rate = await checkRateLimit(`settings:put:${user.id}`, 120, 60 * 1000);
+  // Autosave from the client can burst while users type in settings forms.
+  // Keep this limit comfortably above the autosave cadence to prevent silent drop-offs.
+  const rate = await checkRateLimit(`settings:put:${user.id}`, 600, 60 * 1000);
   if (!rate.allowed) return NextResponse.json({ error: "Too many settings updates." }, { status: 429 });
 
   const payload = await request.json();
@@ -57,21 +43,19 @@ export async function PUT(request: Request) {
   }
 
   await connectToDatabase();
+  const existing = await SettingModel.findOne({ key: "global" }).lean();
+  const merged = {
+    key: "global",
+    documents: payload.documents ?? existing?.documents ?? defaultSettingsData.documents,
+    team: payload.team ?? existing?.team ?? defaultSettingsData.team,
+    company: payload.company ?? existing?.company ?? defaultSettingsData.company,
+    clientNotes: payload.clientNotes ?? existing?.clientNotes ?? defaultSettingsData.clientNotes,
+    lineTemplates: payload.lineTemplates ?? existing?.lineTemplates ?? defaultSettingsData.lineTemplates,
+    emailIntegration: payload.emailIntegration ?? existing?.emailIntegration ?? defaultSettingsData.emailIntegration,
+  };
   await SettingModel.findOneAndUpdate(
     { key: "global" },
-    {
-      $set: {
-        key: "global",
-        documents: payload.documents ?? [],
-        team: payload.team ?? [],
-        company: payload.company ?? {},
-        projects: payload.projects ?? [],
-        clientNotes: payload.clientNotes ?? [],
-        lineTemplates: payload.lineTemplates ?? [],
-        emailIntegration: payload.emailIntegration ?? {},
-        supportPolicy: payload.supportPolicy ?? {},
-      },
-    },
+    { $set: merged },
     { upsert: true },
   );
 

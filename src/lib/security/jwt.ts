@@ -8,7 +8,15 @@ export interface AuthTokenPayload {
 }
 
 const COOKIE_NAME = "leafylines_session";
-const TTL_SECONDS = 60 * 60 * 24 * 7;
+const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 7;
+
+function getTtlSeconds(): number {
+  const raw = (process.env.JWT_TTL_SECONDS || "").trim();
+  if (!raw) return DEFAULT_TTL_SECONDS;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 60) return DEFAULT_TTL_SECONDS;
+  return parsed;
+}
 
 function getSecretKey(): Uint8Array {
   const secret = (process.env.AUTH_SECRET || "").trim();
@@ -23,10 +31,11 @@ export function getAuthCookieName(): string {
 }
 
 export function getAuthCookieMaxAgeSeconds(): number {
-  return TTL_SECONDS;
+  return getTtlSeconds();
 }
 
 export async function signAuthToken(payload: AuthTokenPayload): Promise<string> {
+  const ttlSeconds = getTtlSeconds();
   return new SignJWT({
     email: payload.email,
     role: payload.role,
@@ -35,7 +44,7 @@ export async function signAuthToken(payload: AuthTokenPayload): Promise<string> 
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(payload.sub)
     .setIssuedAt()
-    .setExpirationTime(`${TTL_SECONDS}s`)
+    .setExpirationTime(`${ttlSeconds}s`)
     .sign(getSecretKey());
 }
 

@@ -9,14 +9,27 @@ function getAllowedOrigins(request: Request): string[] {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
-  if (configured.length > 0) {
-    return configured.map(normalizeOrigin);
-  }
-
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
-  const proto = request.headers.get("x-forwarded-proto") || "https";
-  if (!host) return [];
-  return [normalizeOrigin(`${proto}://${host}`)];
+  const protocolFromUrl = (() => {
+    try {
+      return new URL(request.url).protocol.replace(":", "");
+    } catch {
+      return "";
+    }
+  })();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.trim();
+  const protoCandidates = [forwardedProto, protocolFromUrl, "http", "https"].filter(Boolean);
+
+  // In production behind reverse proxies, header-derived host is the safest source of truth.
+  // Keep configured origins, but also allow runtime origin to prevent accidental lockouts
+  // when ALLOWED_ORIGINS is stale or misconfigured.
+  const merged = new Set<string>(configured.map(normalizeOrigin));
+  if (host) {
+    for (const proto of protoCandidates) {
+      merged.add(normalizeOrigin(`${proto}://${host}`));
+    }
+  }
+  return [...merged];
 }
 
 export function requireSameOrigin(request: Request): NextResponse | null {

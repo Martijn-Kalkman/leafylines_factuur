@@ -5,7 +5,13 @@ const userSchema = new Schema(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
     name: { type: String, default: "" },
+    invoiceName: { type: String, default: "" },
+    invoiceEmail: { type: String, default: "" },
+    invoicePhone: { type: String, default: "" },
     role: { type: String, enum: ["user", "admin"], default: "user" },
+    inviteTokenHash: { type: String, default: "" },
+    inviteTokenExpiresAt: { type: Date, default: null },
+    inviteAcceptedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

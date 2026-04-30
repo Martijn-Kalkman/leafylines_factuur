@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { connectToDatabase } from "@/lib/db/mongodb";
 import { EmailLogModel } from "@/lib/db/models/EmailLog";
+import { SettingModel } from "@/lib/db/models/Setting";
 import { requireAuth } from "@/lib/security/authz";
 import { sendDocumentSchema } from "@/lib/security/validation";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { appendAuditLog } from "@/lib/security/auditLog";
 import { requireSameOrigin } from "@/lib/security/requestGuards";
+import { sanitizeHtmlEmail } from "@/lib/htmlEmail";
 
 export const runtime = "nodejs";
 
@@ -16,7 +18,10 @@ interface SendPayload {
   to: string;
   subject: string;
   text: string;
+  html?: string;
+  sendConfirmation?: boolean;
   confirmationText?: string;
+  confirmationHtml?: string;
   attachmentBase64?: string;
   attachmentFileName?: string;
   attachmentMimeType?: string;
@@ -45,18 +50,25 @@ export async function POST(request: Request) {
         : provider === "resend"
           ? process.env.RESEND_API_KEY
           : process.env.SENDGRID_API_KEY;
-    const confirmationRecipients = (process.env.EMAIL_CONFIRMATION_TO || "")
+    await connectToDatabase();
+    const settings = await SettingModel.findOne({ key: "global" }).lean();
+    const dbConfirmationRecipients = (settings?.emailIntegration?.confirmationEmails ?? [])
+      .map((email: unknown) => String(email || "").trim())
+      .filter((email: string) => isEmail(email));
+    const envConfirmationRecipients = (process.env.EMAIL_CONFIRMATION_TO || "")
       .split(",")
       .map((email) => email.trim())
       .filter((email) => isEmail(email));
+    const confirmationRecipients = Array.from(new Set([...dbConfirmationRecipients, ...envConfirmationRecipients]));
     const addServerEmailLogs = async (entries: Array<{ subject: string; to: string; kind: "document" | "confirmation"; status: "success" | "failed"; error?: string }>) => {
       if (entries.length === 0) return;
-      await connectToDatabase();
+      const nowIso = new Date().toISOString();
       await EmailLogModel.insertMany(
         entries.map((entry) => ({
           ...entry,
           error: entry.error || "",
-          createdAt: new Date().toISOString(),
+          createdAt: nowIso,
+          sentAt: nowIso,
           sentBy: user.email || "",
         })),
       );
@@ -81,8 +93,15 @@ export async function POST(request: Request) {
             },
           ]
         : [];
-    const sendMailByProvider = async (to: string[] | string, subject: string, text: string, includeAttachments: boolean) => {
+    const sendMailByProvider = async (
+      to: string[] | string,
+      subject: string,
+      text: string,
+      html: string | undefined,
+      includeAttachments: boolean,
+    ) => {
       const scopedAttachments = includeAttachments ? attachments : [];
+      const safeHtml = html ? sanitizeHtmlEmail(html) : undefined;
       if (provider === "gmail") {
         const smtpPassword = providerApiKey;
         if (!smtpPassword) throw new Error("GMAIL_APP_PASSWORD not configured.");
@@ -98,6 +117,7 @@ export async function POST(request: Request) {
           to,
           subject,
           text,
+          html: safeHtml,
           attachments: scopedAttachments.map((file) => ({
             filename: file.filename,
             content: Buffer.from(file.content, "base64"),
@@ -121,6 +141,7 @@ export async function POST(request: Request) {
             to: Array.isArray(to) ? to : [to],
             subject,
             text,
+            html: safeHtml,
             attachments: scopedAttachments.map((file) => ({
               filename: file.filename,
               content: file.content,
@@ -144,7 +165,10 @@ export async function POST(request: Request) {
           personalizations: [{ to: toList.map((email) => ({ email })) }],
           from: { email: fromEmail },
           subject,
-          content: [{ type: "text/plain", value: text }],
+          content: [
+            { type: "text/plain", value: text },
+            ...(safeHtml ? [{ type: "text/html", value: safeHtml }] : []),
+          ],
           attachments: scopedAttachments.map((file) => ({
             content: file.content,
             filename: file.filename,
@@ -156,15 +180,16 @@ export async function POST(request: Request) {
       if (!response.ok) throw new Error(`SendGrid failed: ${await response.text()}`);
     };
 
-    await sendMailByProvider(body.to, body.subject, body.text, true);
+    await sendMailByProvider(body.to, body.subject, body.text, body.html, true);
     const logs: Array<{ subject: string; to: string; kind: "document" | "confirmation"; status: "success" | "failed"; error?: string }> = [
       { subject: body.subject, to: body.to, kind: "document", status: "success" },
     ];
-    if (confirmationRecipients.length > 0) {
+    if (body.sendConfirmation === true && confirmationRecipients.length > 0) {
       await sendMailByProvider(
         confirmationRecipients,
         `Bevestiging: ${body.subject}`,
         body.confirmationText || `Document met onderwerp "${body.subject}" is verzonden naar ${body.to}.`,
+        body.confirmationHtml,
         false,
       );
       for (const confirmationTo of confirmationRecipients) {
@@ -172,7 +197,11 @@ export async function POST(request: Request) {
       }
     }
     await addServerEmailLogs(logs);
-    await appendAuditLog(user.id, "email.send", { to: body.to, subject: body.subject, confirmationRecipients });
+    await appendAuditLog(user.id, "email.send", {
+      to: body.to,
+      subject: body.subject,
+      confirmationRecipients: body.sendConfirmation === true ? confirmationRecipients : [],
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to send email.";

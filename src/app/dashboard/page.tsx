@@ -1,32 +1,77 @@
 "use client";
 import Sidebar from "@/components/Sidebar";
 import StatusBadge from "@/components/StatusBadge";
-import { useStore, calcTotals, btwPerKwartaal, omzetPerKlant, omzetPerMaand } from "@/store/useStore";
+import { useStore, calcTotals } from "@/store/useStore";
 import { useRouter } from "next/navigation";
-import { TrendingUp, Clock, CheckCircle, FileText } from "lucide-react";
+import { TrendingUp, FileText } from "lucide-react";
+import { useRef } from "react";
+import { useToast } from "@/components/ToastProvider";
 
 export default function Dashboard() {
-  const { documents } = useStore();
+  const { documents, getWorkspacePayload, hydrateWorkspace } = useStore();
   const router = useRouter();
+  const { showToast } = useToast();
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
-  const facturen = documents.filter((d) => d.type === "factuur");
-  const betaald = facturen.filter((d) => d.status === "betaald");
   const openstaand = documents.filter((d) => d.status === "openstaand");
 
-  const totalReceived = betaald.reduce((s, d) => s + calcTotals(d.items, d.btwRate).total, 0);
-  const totalOpen = openstaand.reduce((s, d) => s + calcTotals(d.items, d.btwRate).total, 0);
-
   const recent = [...documents].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
-  const maandOmzet = Object.entries(omzetPerMaand(documents)).sort((a, b) => a[0].localeCompare(b[0]));
-  const btwKwartaal = Object.entries(btwPerKwartaal(documents)).sort((a, b) => a[0].localeCompare(b[0]));
-  const topKlanten = Object.entries(omzetPerKlant(documents)).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const maxOmzet = Math.max(1, ...maandOmzet.map(([, value]) => value));
 
   const fmt = (n: number) => `€ ${n.toFixed(2).replace(".", ",")}`;
+  const exportAllData = () => {
+    const payload = getWorkspacePayload();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `leafylines-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Export gedownload.", "success");
+  };
+
+  const importAllData = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const settingsPayload = {
+        documents: parsed.documents ?? [],
+        team: parsed.team ?? [],
+        company: parsed.company ?? {},
+        clientNotes: parsed.clientNotes ?? [],
+        lineTemplates: parsed.lineTemplates ?? [],
+        emailIntegration: parsed.emailIntegration ?? {},
+      };
+      const clientsPayload = {
+        clients: Array.isArray(parsed.clients) ? parsed.clients : [],
+      };
+      const [settingsRes, clientsRes] = await Promise.all([
+        fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(settingsPayload),
+        }),
+        fetch("/api/klanten", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(clientsPayload),
+        }),
+      ]);
+      if (!settingsRes.ok || !clientsRes.ok) {
+        showToast("Import deels mislukt. Controleer je JSON en probeer opnieuw.", "error");
+        return;
+      }
+      hydrateWorkspace({
+        ...(settingsPayload as Parameters<typeof hydrateWorkspace>[0]),
+        clients: clientsPayload.clients as Parameters<typeof hydrateWorkspace>[0]["clients"],
+      });
+      showToast("Import succesvol verwerkt.", "success");
+    } catch {
+      showToast("Ongeldig JSON-bestand. Import mislukt.", "error");
+    }
+  };
 
   const kpis = [
-    { label: "Totaal ontvangen", value: fmt(totalReceived), icon: CheckCircle, color: "#27AE50", bg: "#e6f4ec" },
-    { label: "Totaal uitstaand", value: fmt(totalOpen), icon: Clock, color: "#E2B928", bg: "#fef9e6" },
     { label: "Openstaande docs", value: String(openstaand.length), icon: FileText, color: "#3F80ED", bg: "#e0ecfd" },
     { label: "Totaal documenten", value: String(documents.length), icon: TrendingUp, color: "#98E5D8", bg: "#e6f9f6" },
   ];
@@ -34,8 +79,26 @@ export default function Dashboard() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
-        <h1 className="text-2xl font-semibold mb-1" style={{ color: "var(--gray1)" }}>Dashboard</h1>
+      <main className="app-main">
+        <div className="flex items-center justify-between mb-1">
+          <h1 className="text-2xl font-semibold" style={{ color: "var(--gray1)" }}>Dashboard</h1>
+          <div className="flex items-center gap-2">
+            <button className="btn-outline text-xs" onClick={exportAllData}>Export JSON</button>
+            <button className="btn-outline text-xs" onClick={() => importInputRef.current?.click()}>Import JSON</button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                void importAllData(file);
+                e.currentTarget.value = "";
+              }}
+            />
+          </div>
+        </div>
         <p className="text-sm mb-6" style={{ color: "var(--gray3)" }}>Welkom terug bij LeafyLines</p>
 
         <div className="grid grid-cols-4 gap-4 mb-8">
@@ -80,46 +143,6 @@ export default function Dashboard() {
               })}
             </tbody>
           </table>
-        </div>
-        <div className="grid grid-cols-3 gap-4 mt-6">
-          <div className="card">
-            <h3 className="font-semibold text-sm mb-3" style={{ color: "var(--gray1)" }}>Omzet per maand/jaar</h3>
-            <div className="flex flex-col gap-2">
-              {maandOmzet.map(([month, value]) => (
-                <div key={month}>
-                  <div className="flex justify-between text-xs" style={{ color: "var(--gray3)" }}>
-                    <span>{month}</span><span>€ {value.toFixed(2)}</span>
-                  </div>
-                  <div style={{ height: 6, borderRadius: 999, background: "#eef2f7", marginTop: 4 }}>
-                    <div style={{ height: 6, borderRadius: 999, background: "var(--accent)", width: `${(value / maxOmzet) * 100}%` }} />
-                  </div>
-                </div>
-              ))}
-              {maandOmzet.length === 0 && <p className="text-xs" style={{ color: "var(--gray4)" }}>Nog geen betaalde facturen.</p>}
-            </div>
-          </div>
-          <div className="card">
-            <h3 className="font-semibold text-sm mb-3" style={{ color: "var(--gray1)" }}>BTW per kwartaal</h3>
-            <div className="flex flex-col gap-2">
-              {btwKwartaal.map(([q, value]) => (
-                <div key={q} className="flex justify-between text-xs" style={{ color: "var(--gray3)" }}>
-                  <span>{q}</span><span>€ {value.toFixed(2)}</span>
-                </div>
-              ))}
-              {btwKwartaal.length === 0 && <p className="text-xs" style={{ color: "var(--gray4)" }}>Nog geen BTW data.</p>}
-            </div>
-          </div>
-          <div className="card">
-            <h3 className="font-semibold text-sm mb-3" style={{ color: "var(--gray1)" }}>Top klanten</h3>
-            <div className="flex flex-col gap-2">
-              {topKlanten.map(([name, value]) => (
-                <div key={name} className="flex justify-between text-xs" style={{ color: "var(--gray3)" }}>
-                  <span>{name}</span><span>€ {value.toFixed(2)}</span>
-                </div>
-              ))}
-              {topKlanten.length === 0 && <p className="text-xs" style={{ color: "var(--gray4)" }}>Nog geen top klanten beschikbaar.</p>}
-            </div>
-          </div>
         </div>
       </main>
     </div>

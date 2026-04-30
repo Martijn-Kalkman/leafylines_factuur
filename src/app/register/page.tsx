@@ -1,26 +1,38 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token") || "";
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [status, setStatus] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!token) {
+      setError("Uitnodigingslink is ongeldig.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Wachtwoorden komen niet overeen.");
+      return;
+    }
     setIsSubmitting(true);
     setError("");
+    setStatus("");
     try {
       const response = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ token, name, password }),
       });
       if (!response.ok) {
         const responseText = await response.text();
@@ -45,18 +57,11 @@ export default function RegisterPage() {
         setIsSubmitting(false);
         return;
       }
-      const login = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ email, password }),
-      });
-      if (!login.ok) {
-        setError("Account aangemaakt, maar automatisch inloggen mislukte. Probeer handmatig in te loggen.");
-        setIsSubmitting(false);
-        return;
-      }
-      router.push("/dashboard");
+      setStatus("Gebruiker succesvol aangemaakt.");
+      setName("");
+      setPassword("");
+      setConfirmPassword("");
+      setIsSubmitting(false);
     } catch {
       setError("Kan de server niet bereiken. Controleer je internetverbinding en probeer opnieuw.");
       setIsSubmitting(false);
@@ -66,7 +71,26 @@ export default function RegisterPage() {
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
       <form className="card w-full max-w-md space-y-3" onSubmit={onSubmit}>
-        <h1 className="text-xl font-semibold">Account aanmaken</h1>
+        <h1 className="text-xl font-semibold">Account activeren</h1>
+        <p className="text-sm" style={{ color: "var(--gray3)" }}>
+          Stel je eigen wachtwoord in. Vereist: minimaal 16 tekens, hoofdletter, kleine letter, cijfer en speciaal teken.
+        </p>
+        {status && (
+          <div
+            role="status"
+            style={{
+              background: "#ecfdf3",
+              border: "1px solid #9be2b6",
+              color: "#116734",
+              borderRadius: 8,
+              padding: "10px 12px",
+              fontSize: 13,
+              fontWeight: 500,
+            }}
+          >
+            {status}
+          </div>
+        )}
         {error && (
           <div
             role="alert"
@@ -88,37 +112,56 @@ export default function RegisterPage() {
           value={name}
           onChange={(e) => {
             if (error) setError("");
+            if (status) setStatus("");
             setName(e.target.value);
           }}
           placeholder="Naam"
         />
         <input
-          value={email}
-          onChange={(e) => {
-            if (error) setError("");
-            setEmail(e.target.value);
-          }}
-          placeholder="E-mail"
-          type="email"
-          required
-        />
-        <input
           value={password}
           onChange={(e) => {
             if (error) setError("");
+            if (status) setStatus("");
             setPassword(e.target.value);
           }}
           placeholder="Wachtwoord"
           type="password"
           required
         />
+        <input
+          value={confirmPassword}
+          onChange={(e) => {
+            if (error) setError("");
+            if (status) setStatus("");
+            setConfirmPassword(e.target.value);
+          }}
+          placeholder="Herhaal wachtwoord"
+          type="password"
+          required
+        />
         <button className="btn-primary w-full justify-center" disabled={isSubmitting} type="submit">
-          Account maken
+          Account activeren
         </button>
         <button type="button" className="btn-outline w-full justify-center" onClick={() => router.push("/login")}>
-          Al account? Inloggen
+          Naar login
         </button>
       </form>
     </main>
+  );
+}
+
+function RegisterFallback() {
+  return (
+    <main className="min-h-screen flex items-center justify-center p-6">
+      <div className="card w-full max-w-md">Laden...</div>
+    </main>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<RegisterFallback />}>
+      <RegisterForm />
+    </Suspense>
   );
 }

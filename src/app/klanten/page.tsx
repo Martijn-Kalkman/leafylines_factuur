@@ -12,25 +12,10 @@ function uid() { return Math.random().toString(36).slice(2, 9); }
 const empty = (): Client => ({
   id: uid(), company: "", contactName: "", address: "",
   city: "", country: "Nederland", email: "", phone: "", notes: "",
-  supportHoursRemaining: 4,
-  supportCycleStart: new Date().toISOString().slice(0, 10),
 });
 
 const lbl: React.CSSProperties = { fontSize: 12, color: "var(--gray3)", display: "block", marginBottom: 4 };
 const fld: React.CSSProperties = { marginBottom: 12 };
-
-function SupportHoursBar({ remaining, total }: { remaining: number; total: number }) {
-  const safeTotal = Math.max(1, total);
-  const pct = Math.max(0, Math.min(100, (remaining / safeTotal) * 100));
-  const color = pct > 50 ? "#27AE50" : pct > 20 ? "#E2B928" : "#E85757";
-  return (
-    <div>
-      <div style={{ height: 8, width: 180, background: "#edf1f6", borderRadius: 999 }}>
-        <div style={{ height: 8, width: `${pct}%`, background: color, borderRadius: 999, transition: "width .2s ease" }} />
-      </div>
-    </div>
-  );
-}
 
 // ── Validation ────────────────────────────────────────────────
 function validateClient(c: Client): string[] {
@@ -116,7 +101,7 @@ function ClientForm({ initial, onSave, onCancel }: {
 
 // ── Page ──────────────────────────────────────────────────────
 export default function Klanten() {
-  const { clients: raw, documents, supportPolicy, addClient, deleteClient, updateClientSupportHours, resetClientSupportHoursIfNeeded } = useStore();
+  const { clients: raw, documents, addClient, deleteClient } = useStore();
   const router = useRouter();
   const [hydrated, setHydrated] = useState(false);
   const [adding, setAdding]     = useState(false);
@@ -127,9 +112,6 @@ export default function Klanten() {
 
   // Wait for zustand persist to rehydrate
   useEffect(() => { setHydrated(true); }, []);
-  useEffect(() => {
-    if (hydrated) resetClientSupportHoursIfNeeded();
-  }, [hydrated, resetClientSupportHoursIfNeeded]);
   const clients = hydrated ? (raw ?? []) : [];
 
   // ── Export JSON ───────────────────────────────────────────
@@ -168,8 +150,6 @@ export default function Klanten() {
             email:       item.email       ?? "",
             phone:       item.phone       ?? "",
             notes:       item.notes       ?? "",
-            supportHoursRemaining: Number(item.supportHoursRemaining ?? supportPolicy.hoursPerCycle),
-            supportCycleStart: item.supportCycleStart ?? new Date().toISOString().slice(0, 10),
           };
           addClient(client);
           count++;
@@ -189,7 +169,7 @@ export default function Klanten() {
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <Sidebar />
-      <main style={{ marginLeft: 220, flex: 1, padding: 32, background: "#f5f6fa" }}>
+      <main className="app-main" style={{ background: "#f5f6fa" }}>
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
@@ -276,20 +256,6 @@ export default function Klanten() {
                         <p style={{ fontSize: 12, color: "var(--gray4)", marginBottom: 2 }}>
                           Omzet: € {documents.filter((d) => d.client === c.company && d.type === "factuur" && d.status === "betaald").reduce((sum, d) => sum + d.items.reduce((s, i) => s + i.price, 0), 0).toFixed(2)}
                         </p>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <span style={{ fontSize: 12, color: "var(--gray3)" }}>Support uren over:</span>
-                          <input
-                            type="number"
-                            min={0}
-                            max={supportPolicy.hoursPerCycle}
-                            value={c.supportHoursRemaining}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => { e.stopPropagation(); updateClientSupportHours(c.id, Number(e.target.value) || 0); }}
-                            style={{ width: 72, fontSize: 12, padding: "4px 6px" }}
-                          />
-                          <span style={{ fontSize: 12, color: "var(--gray4)" }}>/ {supportPolicy.hoursPerCycle} uur</span>
-                        </div>
-                        <SupportHoursBar remaining={c.supportHoursRemaining} total={supportPolicy.hoursPerCycle} />
                         <div style={{ display: "flex", gap: 16, marginTop: 4, flexWrap: "wrap" }}>
                           {c.email   && <span style={{ fontSize: 12, color: "var(--accent)" }}>{c.email}</span>}
                           {c.phone   && <span style={{ fontSize: 12, color: "var(--gray3)" }}>{c.phone}</span>}

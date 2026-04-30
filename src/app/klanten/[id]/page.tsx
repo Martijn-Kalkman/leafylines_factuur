@@ -4,23 +4,10 @@ import { useParams, useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import ConfirmModal from "@/components/ConfirmModal";
 import { useToast } from "@/components/ToastProvider";
-import { useStore, ProjectStatus } from "@/store/useStore";
-import { ArrowLeft, Plus, Trash2, Pencil } from "lucide-react";
+import { useStore } from "@/store/useStore";
+import { ArrowLeft, Pencil } from "lucide-react";
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
-
-function SupportHoursBar({ remaining, total }: { remaining: number; total: number }) {
-  const safeTotal = Math.max(1, total);
-  const pct = Math.max(0, Math.min(100, (remaining / safeTotal) * 100));
-  const color = pct > 50 ? "#27AE50" : pct > 20 ? "#E2B928" : "#E85757";
-  return (
-    <div>
-      <div style={{ height: 10, width: "100%", background: "#edf1f6", borderRadius: 999 }}>
-        <div style={{ height: 10, width: `${pct}%`, background: color, borderRadius: 999, transition: "width .2s ease" }} />
-      </div>
-    </div>
-  );
-}
 
 function defaultRecurringInvoice(clientName: string) {
   return {
@@ -29,6 +16,7 @@ function defaultRecurringInvoice(clientName: string) {
     amount: 0,
     description: `Jaarlijkse servicekosten voor ${clientName || "klant"}`,
     nextDate: new Date().toISOString().slice(0, 10),
+    nextTime: "09:00",
     autoSend: false,
   };
 }
@@ -36,16 +24,13 @@ function defaultRecurringInvoice(clientName: string) {
 export default function KlantDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { clients, projects, documents, clientNotes, supportPolicy, updateClientSupportHours, updateClient, addClientNote, deleteClientNote, addProject, updateProject, deleteProject } = useStore();
+  const { clients, documents, clientNotes, updateClient, addClientNote, deleteClientNote } = useStore();
   const [noteText, setNoteText] = useState("");
-  const [projectName, setProjectName] = useState("");
-  const [projectStatus, setProjectStatus] = useState<ProjectStatus>("actief");
   const [editingClient, setEditingClient] = useState(false);
   const [saveClientOpen, setSaveClientOpen] = useState(false);
   const { showToast } = useToast();
 
   const client = clients.find((c) => c.id === id);
-  const clientProjects = useMemo(() => projects.filter((p) => p.clientId === id), [projects, id]);
   const clientFacturen = useMemo(
     () => documents.filter((d) => d.client === client?.company && d.type === "factuur").sort((a, b) => b.date.localeCompare(a.date)),
     [documents, client?.company]
@@ -82,12 +67,12 @@ export default function KlantDetailPage() {
     });
   }, [client?.id]);
 
-  if (!client) return <div className="ml-56 p-8">Klant niet gevonden.</div>;
+  if (!client) return <div className="app-fallback">Klant niet gevonden.</div>;
 
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
+      <main className="app-main">
         <div className="flex items-center gap-3 mb-6">
           <button className="btn-outline flex items-center gap-2" onClick={() => router.push("/klanten")}>
             <ArrowLeft size={14} /> Terug
@@ -143,62 +128,6 @@ export default function KlantDetailPage() {
               </div>
             )}
           </div>
-          <div className="card">
-            <h2 className="text-sm font-semibold mb-3" style={{ color: "var(--gray1)" }}>Supporturen</h2>
-            <p className="text-xs mb-2" style={{ color: "var(--gray3)" }}>
-              Over: {client.supportHoursRemaining} / {supportPolicy.hoursPerCycle} uur (reset elke {supportPolicy.cycleMonths} maanden)
-            </p>
-            <SupportHoursBar remaining={client.supportHoursRemaining} total={supportPolicy.hoursPerCycle} />
-            <div className="mt-3 flex items-center gap-2">
-              <input
-                type="number"
-                min={0}
-                max={supportPolicy.hoursPerCycle}
-                value={client.supportHoursRemaining}
-                onChange={(e) => updateClientSupportHours(client.id, Number(e.target.value) || 0)}
-                style={{ width: 90 }}
-              />
-              <span className="text-xs" style={{ color: "var(--gray4)" }}>uren resterend</span>
-            </div>
-          </div>
-
-        </div>
-
-        <div className="card mt-4">
-          <h2 className="text-sm font-semibold mb-3" style={{ color: "var(--gray1)" }}>Projecten</h2>
-          <div className="flex flex-col gap-2 mb-3">
-            {clientProjects.map((p) => (
-              <div key={p.id} className="flex items-center gap-2">
-                <span className="text-xs" style={{ color: "var(--gray2)", minWidth: 220 }}>{p.name}</span>
-                <select value={p.status} onChange={(e) => updateProject(p.id, { status: e.target.value as ProjectStatus })} style={{ width: 150 }}>
-                  <option value="actief">actief</option>
-                  <option value="afgerond">afgerond</option>
-                  <option value="on_hold">on hold</option>
-                </select>
-                <button className="icon-btn-danger" onClick={() => { deleteProject(p.id); showToast("Project verwijderd.", "success"); }}><Trash2 size={12} /></button>
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input placeholder="Nieuw project" value={projectName} onChange={(e) => setProjectName(e.target.value)} />
-            <select value={projectStatus} onChange={(e) => setProjectStatus(e.target.value as ProjectStatus)} style={{ width: 150 }}>
-              <option value="actief">actief</option>
-              <option value="afgerond">afgerond</option>
-              <option value="on_hold">on hold</option>
-            </select>
-            <button
-              className="btn-primary flex items-center gap-2"
-              onClick={() => {
-                const name = projectName.trim();
-                if (!name) return;
-                addProject({ id: uid(), clientId: client.id, name, status: projectStatus, budget: 0, notes: "", createdAt: new Date().toISOString().slice(0, 10) });
-                setProjectName("");
-                showToast("Project toegevoegd.", "success");
-              }}
-            >
-              <Plus size={14} /> Toevoegen
-            </button>
-          </div>
         </div>
 
         <div className="card mt-4">
@@ -206,7 +135,7 @@ export default function KlantDetailPage() {
           <div className="flex flex-col gap-2 mb-3">
             {notes.map((n) => (
               <div key={n.id} className="flex items-center justify-between text-xs" style={{ color: "var(--gray3)" }}>
-                <span>{n.createdAt} - {n.text}{n.supportHoursUsed ? ` (-${n.supportHoursUsed}u support)` : ""}</span>
+                <span>{n.createdAt} - {n.text}</span>
                 <button onClick={() => { deleteClientNote(n.id); showToast("Notitie verwijderd.", "success"); }} className="icon-btn-danger">x</button>
               </div>
             ))}
@@ -271,6 +200,17 @@ export default function KlantDetailPage() {
                 onChange={(e) => setClientDraft((s) => ({
                   ...s,
                   recurringInvoice: { ...s.recurringInvoice, nextDate: e.target.value },
+                }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs" style={{ color: "var(--gray3)" }}>Verzendtijd</label>
+              <input
+                type="time"
+                value={clientDraft.recurringInvoice.nextTime || "09:00"}
+                onChange={(e) => setClientDraft((s) => ({
+                  ...s,
+                  recurringInvoice: { ...s.recurringInvoice, nextTime: e.target.value || "09:00" },
                 }))}
               />
             </div>

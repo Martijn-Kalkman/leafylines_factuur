@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthCookieName } from "@/lib/security/jwt";
+import { getAuthCookieName, verifyAuthToken } from "@/lib/security/jwt";
 
 const PUBLIC_ROUTES = ["/login", "/register"];
 const PUBLIC_API_ROUTES = ["/api/register", "/api/auth/login", "/api/auth/logout", "/api/auth/session"];
 
-export default function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   if (path === "/") {
     return NextResponse.redirect(new URL("/login", request.url));
@@ -12,11 +12,24 @@ export default function middleware(request: NextRequest) {
   const isPublicPage = PUBLIC_ROUTES.some((route) => path === route || path.startsWith(`${route}/`));
   const isPublicApi = PUBLIC_API_ROUTES.some((route) => path === route || path.startsWith(`${route}/`));
   const token = request.cookies.get(getAuthCookieName())?.value;
-  const isLoggedIn = Boolean(token);
+  const session = token ? await verifyAuthToken(token) : null;
+  const isLoggedIn = Boolean(session);
 
   if (!isPublicApi && !isPublicPage && !path.startsWith("/api") && !isLoggedIn) {
     const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+    const response = NextResponse.redirect(loginUrl);
+    if (token && !session) {
+      response.cookies.set({
+        name: getAuthCookieName(),
+        value: "",
+        path: "/",
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        expires: new Date(0),
+      });
+    }
+    return response;
   }
   if (isPublicPage && isLoggedIn) {
     const dashboardUrl = new URL("/dashboard", request.url);
@@ -30,7 +43,7 @@ export default function middleware(request: NextRequest) {
   const isDev = process.env.NODE_ENV !== "production";
   const csp = [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+    isDev ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "frame-src 'self' blob:",

@@ -49,7 +49,6 @@ export default function Documenten() {
   };
   useEffect(() => {
     runRecurringGeneration();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<DocStatus | "">("");
@@ -72,7 +71,7 @@ export default function Documenten() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
+      <main className="app-main">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-semibold mb-1" style={{ color: "var(--gray1)" }}>Documenten</h1>
@@ -112,7 +111,7 @@ export default function Documenten() {
           <table>
             <thead>
               <tr className="border-b border-gray-100">
-                <th>Nummer</th><th>Type</th><th>Taal</th><th>Klant</th><th>Contact</th><th>Datum</th><th>Bedrag</th><th>Herinnering</th><th>Status</th>
+                <th>Nummer</th><th>Type</th><th>Taal</th><th>Klant</th><th>Contact</th><th>Datum</th><th>Bedrag</th><th>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -128,16 +127,12 @@ export default function Documenten() {
                     <td className="text-xs" style={{ color: "var(--gray3)" }}>{d.contact}</td>
                     <td className="text-xs" style={{ color: "var(--gray3)" }}>{d.date}</td>
                     <td className="text-xs font-medium" style={{ color: "var(--gray1)" }}>{fmt(total)}</td>
-                    <td className="text-xs" style={{ color: "var(--gray3)" }}>
-                      {d.status === "openstaand" && daysOverdue(d.dueDate) > 0 ? `${daysOverdue(d.dueDate)} dagen` : "-"}
-                      {d.reminderSent ? " • verzonden" : ""}
-                    </td>
                     <td><StatusBadge status={d.status} /></td>
                   </tr>
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-8 text-sm" style={{ color: "var(--gray4)" }}>Geen documenten gevonden</td></tr>
+                <tr><td colSpan={8} className="text-center py-8 text-sm" style={{ color: "var(--gray4)" }}>Geen documenten gevonden</td></tr>
               )}
             </tbody>
           </table>

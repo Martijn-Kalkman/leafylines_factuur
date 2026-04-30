@@ -95,9 +95,6 @@ export default function LoginPage() {
         <button className="btn-primary w-full justify-center" disabled={isSubmitting} type="submit">
           Inloggen
         </button>
-        <button type="button" className="btn-outline w-full justify-center" onClick={() => router.push("/register")}>
-          Nieuw account maken
-        </button>
       </form>
     </main>
   );

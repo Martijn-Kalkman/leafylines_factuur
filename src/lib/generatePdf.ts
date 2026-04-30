@@ -15,21 +15,23 @@ const T = {
     docTitle: (t: string) => t === "factuur" ? "Factuur" : "Offerte",
     product: "Product/service", desc: "Artikelomschrijving",
     price: "Stukprijs", total: "Totaal",
-    date: "Datum", number: (t: string) => t === "factuur" ? "Factuurnummer" : "Offertenummer",
+    date: "Datum", dueDate: "Vervaldatum", number: (t: string) => t === "factuur" ? "Factuurnummer" : "Offertenummer",
     kvk: "KvK nummer", btwLabel: "BTW nummer", iban: "IBAN",
     btwPct: "BTW in %", btwEur: "BTW in €", incl: "Incl. VAT",
-    footer: (id: string) =>
-      `Gelieve het totaalbedrag binnen 14 dagen te voldoen op onze IBAN bankrekeningnummer ten name van LeafyLines onder vermelding van het factuurnummer ${id}`,
+    notes: "Notities",
+    footer: (id: string, dueDate: string) =>
+      `Vervaldatum: ${dueDate}. Gelieve te betalen op onze IBAN onder vermelding van factuurnummer ${id}.`,
   },
   en: {
     docTitle: (t: string) => t === "factuur" ? "Invoice" : "Quotation",
     product: "Product/service", desc: "Description",
     price: "Unit price", total: "Total",
-    date: "Date", number: (t: string) => t === "factuur" ? "Invoice number" : "Quote number",
+    date: "Date", dueDate: "Due date", number: (t: string) => t === "factuur" ? "Invoice number" : "Quote number",
     kvk: "Chamber of Commerce", btwLabel: "VAT number", iban: "IBAN",
     btwPct: "VAT %", btwEur: "VAT amount", incl: "Incl. VAT",
-    footer: (id: string) =>
-      `Please transfer the total amount within 14 days to our IBAN in the name of LeafyLines, quoting reference ${id}`,
+    notes: "Notes",
+    footer: (id: string, dueDate: string) =>
+      `Due date: ${dueDate}. Please pay to our IBAN quoting reference ${id}.`,
   },
 };
 
@@ -54,7 +56,7 @@ async function loadPng(): Promise<{ data: string; w: number; h: number } | null>
   }
 }
 
-async function buildPdf(doc: Document, COMPANY: CompanySettings, _signature?: string): Promise<jsPDF> {
+async function buildPdf(doc: Document, COMPANY: CompanySettings): Promise<jsPDF> {
   const lang = doc.lang === "nl" ? T.nl : T.en;
   const { sub, tax, total } = calcTotals(doc.items, doc.btwRate);
   const fmt = (n: number) => `\u20AC ${n.toFixed(2)}`;
@@ -64,7 +66,19 @@ async function buildPdf(doc: Document, COMPANY: CompanySettings, _signature?: st
   const M = 20;
   const PAGE_H = 297;
   const PAGE_CONTENT_TOP = 55;
-  const footerText = (COMPANY.footerText?.trim() || lang.footer(doc.id)).replaceAll("{id}", doc.id);
+  const FOOTER_SAFE_TOP = 268;
+  const CONTENT_BOTTOM = FOOTER_SAFE_TOP - 4;
+  const footerTemplate = (COMPANY.footerText?.trim() || lang.footer(doc.id, doc.dueDate))
+    .replace("binnen 14 dagen", "uiterlijk op {dueDate}")
+    .replace("within 14 days", "by {dueDate}");
+  const footerText = footerTemplate
+    .replaceAll("{id}", doc.id)
+    .replaceAll("{dueDate}", doc.dueDate);
+  const rawWebsite = COMPANY.website?.trim() || "";
+  const legalUrl = rawWebsite
+    ? (/^https?:\/\//i.test(rawWebsite) ? rawWebsite : `https://${rawWebsite}`)
+    : "";
+  const legalLabel = legalUrl ? `Juridische voorwaarden: ${legalUrl}` : "";
 
   const logo = await loadPng();
 
@@ -118,7 +132,7 @@ async function buildPdf(doc: Document, COMPANY: CompanySettings, _signature?: st
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(9);
   pdf.setTextColor(...BLUE);
-  pdf.text(COMPANY.email, cx, blockY + 6);
+  pdf.text(doc.contactEmail || COMPANY.email, cx, blockY + 6);
   pdf.setTextColor(...MID);
   pdf.text(doc.phone, cx, blockY + 11);
 
@@ -148,17 +162,22 @@ async function buildPdf(doc: Document, COMPANY: CompanySettings, _signature?: st
     pdf.text(val, W - M, metaY + i * 6, { align: "right" });
   });
 
-  // ── Items table (with empty rows to match template) ──────────
-  // Pad to at least 10 rows like the sample
-  const MIN_ROWS = 10;
-  const filledRows = doc.items.map((item) => [
+  // ── Items table (only rows with actual data) ─────────────────
+  const filledRows = doc.items
+    .filter((item) => {
+      const hasProduct = item.product.trim().length > 0;
+      const hasDescription = item.description.trim().length > 0;
+      const quantity = Number(item.quantity ?? 1);
+      const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+      const hasAmount = (item.price || 0) * safeQuantity !== 0;
+      return hasProduct || hasDescription || hasAmount;
+    })
+    .map((item) => [
     item.product,
     item.description,
-    "",               // Stukprijs col (blank per original template)
     fmt(item.price),
+    fmt((item.price || 0) * Number(item.quantity ?? 1)),
   ]);
-  const emptyRow = ["", "", "", ""];
-  while (filledRows.length < MIN_ROWS) filledRows.push(emptyRow);
 
   autoTable(pdf, {
     startY: metaY + 20,
@@ -194,22 +213,33 @@ async function buildPdf(doc: Document, COMPANY: CompanySettings, _signature?: st
       3: { cellWidth: 28, halign: "right" },
     },
     showFoot: "lastPage",
-    margin: { left: M, right: M, top: PAGE_CONTENT_TOP },
+    margin: { left: M, right: M, top: PAGE_CONTENT_TOP, bottom: PAGE_H - CONTENT_BOTTOM },
   });
 
-  const finalTableY = (pdf as any).lastAutoTable.finalY as number;
-  const notesLines = doc.notes ? pdf.splitTextToSize(doc.notes, W - 2 * M) : [];
-  const notesHeight = notesLines.length > 0 ? notesLines.length * 4 + 4 : 0;
+  const finalTableY = (pdf as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? metaY + 20;
+  const rawNoteRows = doc.notes
+    ? doc.notes.split("\n").map((line) => line.trim()).filter(Boolean)
+    : [];
+  const noteRows = rawNoteRows.map((line) => ({
+    type: line.startsWith("## ") ? "header" as const : "text" as const,
+    value: line.startsWith("## ") ? line.slice(3).trim() : line,
+  })).filter((row) => row.value.length > 0);
+  const noteLineHeight = 4;
+  const notesHeadingHeight = noteRows.length > 0 ? 6 : 0;
+  const notesBodyHeight = noteRows.reduce((height, row) => {
+    const wrapped = pdf.splitTextToSize(row.value, W - 2 * M);
+    return height + wrapped.length * noteLineHeight + (row.type === "header" ? 1.5 : 0);
+  }, 0);
+  const notesHeight = noteRows.length > 0 ? notesHeadingHeight + notesBodyHeight + 4 : 0;
   const legalLines = COMPANY.signatureLegalText ? pdf.splitTextToSize(COMPANY.signatureLegalText, W - 2 * M) : [];
   const legalHeight = legalLines.length > 0 ? legalLines.length * 4 + 4 : 0;
   const signatureBlockHeight = doc.type === "factuur" && doc.signaturesEnabled ? legalHeight + 24 : 0;
   const footerLines = pdf.splitTextToSize(footerText, W - 2 * M);
-  const footerHeight = footerLines.length * 3.4 + 4;
   const totalsBlockHeight = 18; // 2 rows + incl row
 
   let contentY = finalTableY + 5;
   // Keep totals directly under table when possible, otherwise move only totals.
-  if (contentY + totalsBlockHeight > PAGE_H - 10) {
+  if (contentY + totalsBlockHeight > CONTENT_BOTTOM) {
     pdf.addPage();
     contentY = PAGE_CONTENT_TOP;
   }
@@ -238,19 +268,30 @@ async function buildPdf(doc: Document, COMPANY: CompanySettings, _signature?: st
 
   // ── Notes ─────────────────────────────────────────────────────
   let flowY = inclY + 14;
-  if (doc.notes) {
-    if (flowY + notesHeight > PAGE_H - 10) {
+  if (noteRows.length > 0) {
+    if (flowY + notesHeight > CONTENT_BOTTOM) {
       pdf.addPage();
       flowY = PAGE_CONTENT_TOP;
     }
-    pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(...GRAY);
-    pdf.text(notesLines, M, flowY, { maxWidth: W - 2 * M });
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(9);
+    pdf.setTextColor(...DARK);
+    pdf.text(lang.notes, M, flowY);
+    let noteY = flowY + notesHeadingHeight;
+    for (const row of noteRows) {
+      const wrapped = pdf.splitTextToSize(row.value, W - 2 * M);
+      pdf.setFont("helvetica", row.type === "header" ? "bold" : "normal");
+      pdf.setFontSize(row.type === "header" ? 8.5 : 8);
+      pdf.setTextColor(...GRAY);
+      pdf.text(wrapped, M, noteY, { maxWidth: W - 2 * M });
+      noteY += wrapped.length * noteLineHeight + (row.type === "header" ? 1.5 : 0);
+    }
     flowY += notesHeight + 3;
   }
 
   // ── Signature lines (optional for invoices) ───────────────────
   if (doc.type === "factuur" && doc.signaturesEnabled) {
-    if (flowY + signatureBlockHeight > PAGE_H - 10) {
+    if (flowY + signatureBlockHeight > CONTENT_BOTTOM) {
       pdf.addPage();
       flowY = PAGE_CONTENT_TOP;
     }
@@ -301,7 +342,15 @@ async function buildPdf(doc: Document, COMPANY: CompanySettings, _signature?: st
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(8);
     pdf.setTextColor(...GRAY);
-    pdf.text(footerLines, W / 2, 283, { align: "center", maxWidth: W - 2 * M });
+    pdf.text(footerLines, W / 2, 279, { align: "center", maxWidth: W - 2 * M });
+    if (legalLabel) {
+      pdf.setTextColor(...BLUE);
+      const legalY = 286;
+      const labelWidth = pdf.getTextWidth(legalLabel);
+      const startX = (W - labelWidth) / 2;
+      // Add clickable legal link on every page footer.
+      pdf.textWithLink(legalLabel, startX, legalY, { url: legalUrl });
+    }
   }
 
   return pdf;
@@ -313,11 +362,13 @@ export async function generatePdfBlobUrl(doc: Document, COMPANY: CompanySettings
 }
 
 export async function generatePdfBlob(doc: Document, COMPANY: CompanySettings, signature?: string): Promise<Blob> {
-  const pdf = await buildPdf(doc, COMPANY, signature);
+  void signature;
+  const pdf = await buildPdf(doc, COMPANY);
   return pdf.output("blob");
 }
 
 export async function generatePdf(doc: Document, COMPANY: CompanySettings, signature?: string) {
-  const pdf = await buildPdf(doc, COMPANY, signature);
+  void signature;
+  const pdf = await buildPdf(doc, COMPANY);
   pdf.save(`${doc.id}.pdf`);
 }

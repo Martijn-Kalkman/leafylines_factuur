@@ -2,9 +2,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, FileText, FilePlus, Users, Settings, Mail } from "lucide-react";
+import { LayoutDashboard, FileText, FilePlus, Users, Settings, Mail, ShieldCheck, UserPlus, Menu, X } from "lucide-react";
 import Image from "next/image";
-import { useStore } from "@/store/useStore";
 
 const nav = [
   { href: "/dashboard",  icon: LayoutDashboard, label: "Dashboard" },
@@ -17,10 +16,7 @@ const nav = [
 export default function Sidebar() {
   const path = usePathname();
   const [role, setRole] = useState<"user" | "admin" | null>(null);
-  const { resetClientSupportHoursIfNeeded } = useStore();
-  useEffect(() => {
-    resetClientSupportHoursIfNeeded();
-  }, [resetClientSupportHoursIfNeeded]);
+  const [mobileOpen, setMobileOpen] = useState(false);
   useEffect(() => {
     const loadSession = async () => {
       const response = await fetch("/api/auth/session", { cache: "no-store" });
@@ -30,20 +26,14 @@ export default function Sidebar() {
     };
     void loadSession();
   }, []);
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [path]);
   const isActive = (href: string) =>
     path === href || path.startsWith(href + "/");
 
-  return (
-    <aside style={{
-      position: "fixed", top: 0, left: 0, height: "100vh", width: 220,
-      background: "white", borderRight: "1px solid #f0f0f0",
-      display: "flex", flexDirection: "column", zIndex: 10,
-    }}>
-      <div style={{ padding: "20px 16px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "center" }}>
-        <Image src="/leaf.png" alt="LeafyLines" width={140} height={70}
-          style={{ objectFit: "contain", width: "auto", height: 56 }} priority />
-      </div>
-
+  const navContent = (
+    <>
       <nav style={{ flex: 1, padding: 12, display: "flex", flexDirection: "column", gap: 4 }}>
         {nav.map(({ href, icon: Icon, label }) => {
           const active = isActive(href);
@@ -69,15 +59,29 @@ export default function Sidebar() {
           <Users size={16} />Profiel
         </Link>
         {role === "admin" && (
-          <Link href="/users" style={{
-            display: "flex", alignItems: "center", gap: 12,
-            padding: "9px 12px", borderRadius: 8, fontSize: 14, fontWeight: 500,
-            textDecoration: "none", transition: "all 0.15s",
-            background: isActive("/users") ? "var(--primary)" : "transparent",
-            color: isActive("/users") ? "#1a6b61" : "var(--gray2)",
-          }}>
-            <Users size={16} />Users
-          </Link>
+          <>
+            <p style={{ fontSize: 11, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--gray4)", margin: "10px 12px 4px" }}>
+              Admin
+            </p>
+            <Link href="/users" style={{
+              display: "flex", alignItems: "center", gap: 12,
+              padding: "9px 12px", borderRadius: 8, fontSize: 14, fontWeight: 500,
+              textDecoration: "none", transition: "all 0.15s",
+              background: isActive("/users") ? "var(--primary)" : "transparent",
+              color: isActive("/users") ? "#1a6b61" : "var(--gray2)",
+            }}>
+              <ShieldCheck size={16} />Users
+            </Link>
+            <Link href="/users/register" style={{
+              display: "flex", alignItems: "center", gap: 12,
+              padding: "9px 12px", borderRadius: 8, fontSize: 14, fontWeight: 500,
+              textDecoration: "none", transition: "all 0.15s",
+              background: isActive("/users/register") ? "var(--primary)" : "transparent",
+              color: isActive("/users/register") ? "#1a6b61" : "var(--gray2)",
+            }}>
+              <UserPlus size={16} />Register
+            </Link>
+          </>
         )}
       </nav>
 
@@ -102,6 +106,40 @@ export default function Sidebar() {
           Uitloggen
         </button>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      <header className="mobile-topbar">
+        <Image src="/leaf.png" alt="LeafyLines" width={120} height={50} style={{ objectFit: "contain", width: "auto", height: 38 }} priority />
+        <button className="btn-outline" style={{ padding: 8 }} onClick={() => setMobileOpen((value) => !value)} aria-label="Menu openen">
+          {mobileOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
+      </header>
+
+      {mobileOpen && (
+        <div className="mobile-sidebar-backdrop" onClick={() => setMobileOpen(false)}>
+          <aside className="mobile-sidebar" onClick={(event) => event.stopPropagation()}>
+            <div style={{ padding: "16px 14px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "center" }}>
+              <Image src="/leaf.png" alt="LeafyLines" width={130} height={56} style={{ objectFit: "contain", width: "auto", height: 44 }} priority />
+            </div>
+            {navContent}
+          </aside>
+        </div>
+      )}
+
+      <aside className="desktop-sidebar" style={{
+        position: "fixed", top: 0, left: 0, height: "100vh", width: 220,
+        background: "white", borderRight: "1px solid #f0f0f0",
+        flexDirection: "column", zIndex: 10,
+      }}>
+        <div style={{ padding: "20px 16px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "center" }}>
+          <Image src="/leaf.png" alt="LeafyLines" width={140} height={70}
+            style={{ objectFit: "contain", width: "auto", height: 56 }} priority />
+        </div>
+        {navContent}
+      </aside>
+    </>
   );
 }

@@ -1,121 +1,126 @@
 "use client";
 import { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
-import ConfirmModal from "@/components/ConfirmModal";
 import { useToast } from "@/components/ToastProvider";
-import { useStore, TeamMember, btwPerKwartaal } from "@/store/useStore";
-import { Check, Pencil, Trash2, Plus, X, Building2, Users, Download, Mail } from "lucide-react";
+import { useStore, EmailTemplatePreset, btwPerKwartaal } from "@/store/useStore";
+import { renderEmailTemplate } from "@/lib/emailTemplates";
+import { sanitizeHtmlEmail } from "@/lib/htmlEmail";
+import { Check, Building2, Download, Mail } from "lucide-react";
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
+function normalizeWebsiteUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+function sampleTemplateContext() {
+  return {
+    documentId: "LL-2026-042",
+    clientName: "Jan de Vries",
+    clientCompany: "Acme BV",
+    contactName: "LeafyLines Team",
+    toEmail: "jan@acme.nl",
+    // Keep deterministic to avoid SSR/CSR hydration mismatches in preview.
+    sentAt: "30-04-2026 09:00:00",
+  };
+}
 
 const lbl: React.CSSProperties = { fontSize: 12, color: "var(--gray3)", display: "block", marginBottom: 4 };
 const sec: React.CSSProperties = { fontSize: 16, fontWeight: 600, color: "var(--gray1)", marginBottom: 4 };
 const sub: React.CSSProperties = { fontSize: 13, color: "var(--gray3)", marginBottom: 20 };
-
-const COLORS = ["#98E5D8","#f5a623","#3F80ED","#27AE50","#E2B928","#E85757","#9b59b6","#1abc9c"];
-
-function Avatar({ m, size = 40 }: { m: TeamMember; size?: number }) {
-  if (m.avatarDataUrl) {
-    return <img src={m.avatarDataUrl} alt={m.name} style={{ width: size, height: size, borderRadius: size / 2, objectFit: "cover", flexShrink: 0 }} />;
-  }
-  return (
-    <div style={{
-      width: size, height: size, borderRadius: size / 2,
-      background: m.color, display: "flex", alignItems: "center",
-      justifyContent: "center", fontWeight: 700, fontSize: size * 0.35,
-      color: "#fff", flexShrink: 0, letterSpacing: 0.5,
-    }}>
-      {m.initials || m.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
-    </div>
-  );
-}
-
-function MemberForm({ initial, onSave, onCancel }: {
-  initial: TeamMember;
-  onSave: (m: TeamMember) => void;
-  onCancel: () => void;
-}) {
-  const [form, setForm] = useState<TeamMember>(initial);
-  const [errors, setErrors] = useState<string[]>([]);
-  const set = (k: keyof TeamMember, v: string) => setForm((f) => ({ ...f, [k]: v }));
-
-  const handleSave = () => {
-    const errs: string[] = [];
-    if (!form.name.trim()) errs.push("Naam is verplicht.");
-    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.push("Ongeldig e-mailadres.");
-    if (errs.length) { setErrors(errs); return; }
-    onSave({ ...form, initials: form.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() });
-  };
-
-  return (
-    <div>
-      {errors.length > 0 && (
-        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
-          {errors.map((e, i) => <p key={i} style={{ fontSize: 13, color: "var(--error)", margin: 0 }}>• {e}</p>)}
-        </div>
-      )}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        {([["name","Naam *","Jan de Vries"],["role","Functie","Developer"],["email","E-mail","jan@leafylines.nl"],["phone","Telefoon","+31 6 ..."]] as [keyof TeamMember, string, string][]).map(([k, label, ph]) => (
-          <div key={k} style={{ marginBottom: 12 }}>
-            <label style={lbl}>{label}</label>
-            <input value={form[k] as string} onChange={(e) => set(k, e.target.value)} placeholder={ph} />
-          </div>
-        ))}
-      </div>
-      <div style={{ marginBottom: 16 }}>
-        <label style={lbl}>Handtekening (tekst)</label>
-        <input value={form.signature ?? ""} onChange={(e) => set("signature", e.target.value)} placeholder="Jan de Vries" />
-      </div>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button className="btn-outline" onClick={onCancel} style={{ display: "flex", alignItems: "center", gap: 6 }}><X size={13} /> Annuleren</button>
-        <button className="btn-primary" onClick={handleSave} style={{ display: "flex", alignItems: "center", gap: 6 }}><Check size={13} /> Opslaan</button>
-      </div>
-    </div>
-  );
-}
+type AppUserOption = { id: string; email: string; name: string };
 
 export default function Instellingen() {
-  const { company, updateCompany, team: rawTeam, addTeamMember, updateTeamMember, deleteTeamMember, lineTemplates, addLineTemplate, updateLineTemplate, deleteLineTemplate, documents, supportPolicy, updateSupportPolicy, resetClientSupportHoursIfNeeded, resetClientSupportHoursNow } = useStore();
+  const { company, updateCompany, lineTemplates, addLineTemplate, updateLineTemplate, deleteLineTemplate, documents, emailIntegration, updateEmailIntegration } = useStore();
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
-
-  const team = hydrated ? (rawTeam ?? []) : [];
 
   // Company form state
   const [comp, setComp]         = useState(company);
   const [compSaved, setCompSaved] = useState(false);
   const [compErrors, setCompErrors] = useState<string[]>([]);
 
-  useEffect(() => { if (hydrated) setComp(company); }, [hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
+    setComp(company);
+  }, [hydrated, company]);
 
-  const saveCompany = () => {
+  const saveCompany = async () => {
     const errs: string[] = [];
     if (!comp.name.trim())  errs.push("Bedrijfsnaam is verplicht.");
     if (!comp.iban.trim())  errs.push("IBAN is verplicht.");
     if (errs.length) { setCompErrors(errs); return; }
     setCompErrors([]);
-    updateCompany(comp);
+    const normalizedCompany = {
+      ...comp,
+      website: normalizeWebsiteUrl(comp.website),
+    };
+    setComp(normalizedCompany);
+    updateCompany(normalizedCompany);
+    const response = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company: normalizedCompany }),
+    });
+    if (!response.ok) {
+      showToast("Bedrijfsgegevens lokaal bijgewerkt, maar DB-opslag mislukte.", "error");
+      return;
+    }
     setCompSaved(true);
-    showToast("Bedrijfsgegevens opgeslagen.", "success");
+    showToast("Bedrijfsgegevens opgeslagen in database.", "success");
     setTimeout(() => setCompSaved(false), 2500);
   };
 
-  const [addingMember, setAddingMember]   = useState(false);
-  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [newTemplate, setNewTemplate] = useState({ title: "", product: "", description: "", price: 0 });
   const { showToast } = useToast();
-  const [deleteTeamMemberId, setDeleteTeamMemberId] = useState<string | null>(null);
-
-  const emptyMember = (): TeamMember => ({
-    id: uid(), name: "", phone: "", email: "", role: "", initials: "", color: COLORS[team.length % COLORS.length],
+  const [emailTemplates, setEmailTemplates] = useState({
+    documentSubjectTemplate: emailIntegration.documentSubjectTemplate,
+    documentHtmlTemplate: emailIntegration.documentHtmlTemplate,
+    confirmationHtmlTemplate: emailIntegration.confirmationHtmlTemplate,
+    confirmationEmails: emailIntegration.confirmationEmails,
+    templatePresets: emailIntegration.templatePresets,
+    selectedTemplatePresetId: emailIntegration.selectedTemplatePresetId,
   });
+  const [userOptions, setUserOptions] = useState<AppUserOption[]>([]);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [createTemplateModalOpen, setCreateTemplateModalOpen] = useState(false);
+  useEffect(() => {
+    if (!hydrated) return;
+    setEmailTemplates({
+      documentSubjectTemplate: emailIntegration.documentSubjectTemplate,
+      documentHtmlTemplate: emailIntegration.documentHtmlTemplate,
+      confirmationHtmlTemplate: emailIntegration.confirmationHtmlTemplate,
+      confirmationEmails: emailIntegration.confirmationEmails,
+      templatePresets: emailIntegration.templatePresets,
+      selectedTemplatePresetId: emailIntegration.selectedTemplatePresetId,
+    });
+  }, [hydrated, emailIntegration]);
+  useEffect(() => {
+    if (!hydrated) return;
+    const loadUsers = async () => {
+      const response = await fetch("/api/users", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = (await response.json()) as { users?: Array<{ id: string; email: string; name?: string }> };
+      setUserOptions((data.users ?? []).map((user) => ({ id: user.id, email: user.email, name: user.name ?? "" })));
+    };
+    void loadUsers();
+  }, [hydrated]);
+  const saveSettingsPatch = async (patch: Record<string, unknown>): Promise<boolean> => {
+    const response = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    return response.ok;
+  };
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <Sidebar />
-      <main style={{ marginLeft: 220, flex: 1, padding: 32, background: "#f5f6fa", maxWidth: "calc(100vw - 220px)" }}>
+      <main className="app-main" style={{ background: "#f5f6fa", maxWidth: "calc(100vw - 220px)" }}>
         <h1 style={{ fontSize: 24, fontWeight: 600, color: "var(--gray1)", marginBottom: 4 }}>Instellingen</h1>
-        <p style={{ fontSize: 13, color: "var(--gray3)", marginBottom: 32 }}>Beheer je bedrijfsgegevens en teamleden</p>
+        <p style={{ fontSize: 13, color: "var(--gray3)", marginBottom: 32 }}>Beheer je bedrijfsgegevens en templates</p>
 
         {/* ── Bedrijfsgegevens ───────────────────────────────── */}
         <div className="card" style={{ marginBottom: 24 }}>
@@ -142,7 +147,7 @@ export default function Instellingen() {
               ["iban",    "IBAN *",            "NL00 BANK 0000000000"],
               ["email",   "E-mailadres",       "info@bedrijf.nl"],
               ["phone",   "Telefoonnummer",    "+31 10 ..."],
-              ["website", "Website",           "www.leafylines.nl"],
+              ["website", "Website (voor juridische link in footer)", "https://www.leafylines.nl"],
             ] as [Exclude<keyof typeof comp, "signatureLegalText" | "footerText" | "defaultHourlyRate">, string, string][]).map(([k, label, ph]) => (
               <div key={k} style={{ marginBottom: 14 }}>
                 <label style={lbl}>{label}</label>
@@ -171,8 +176,11 @@ export default function Instellingen() {
               rows={3}
               value={comp.footerText}
               onChange={(e) => setComp((c) => ({ ...c, footerText: e.target.value }))}
-              placeholder="Gebruik {id} als placeholder voor documentnummer."
+              placeholder="Gebruik {id} voor documentnummer en {dueDate} voor vervaldatum."
             />
+            <p style={{ fontSize: 12, color: "var(--gray3)", marginTop: 6 }}>
+              Voorbeeld: Gelieve het totaalbedrag uiterlijk op {"{dueDate}"} te voldoen op onze IBAN onder vermelding van factuurnummer {"{id}"}.
+            </p>
           </div>
           <div style={{ marginBottom: 14 }}>
             <label style={lbl}>Juridische tekst boven handtekening</label>
@@ -182,6 +190,9 @@ export default function Instellingen() {
               onChange={(e) => setComp((c) => ({ ...c, signatureLegalText: e.target.value }))}
               placeholder="Tekst die boven de handtekeningregels op facturen verschijnt..."
             />
+            <p style={{ fontSize: 12, color: "var(--gray3)", marginTop: 6 }}>
+              Wordt alleen getoond als handtekeningregels op een factuur zijn ingeschakeld.
+            </p>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
@@ -192,103 +203,249 @@ export default function Instellingen() {
           </div>
         </div>
 
-        {/* ── Teamleden ──────────────────────────────────────── */}
-        <div className="card">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Users size={18} color="var(--primary-dark)" />
-              <p style={sec}>Teamleden</p>
-            </div>
-            {!addingMember && (
-              <button className="btn-primary" onClick={() => { setAddingMember(true); setEditingMemberId(null); }}
-                style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <Plus size={14} /> Teamlid toevoegen
-              </button>
-            )}
-          </div>
-          <p style={sub}>Teamleden zijn selecteerbaar als contactpersoon op facturen.</p>
-
-          {addingMember && (
-            <div style={{ background: "#f8fffe", border: "1px solid var(--primary)", borderRadius: 10, padding: 16, marginBottom: 16 }}>
-              <p style={{ fontSize: 14, fontWeight: 600, color: "var(--gray2)", marginBottom: 14 }}>Nieuw teamlid</p>
-              <MemberForm
-                initial={emptyMember()}
-                onSave={(m) => { addTeamMember(m); setAddingMember(false); showToast("Teamlid toegevoegd.", "success"); }}
-                onCancel={() => setAddingMember(false)}
-              />
-            </div>
-          )}
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {team.map((m) => (
-              <div key={m.id} style={{ border: "1px solid #f0f0f0", borderRadius: 10, padding: 16,
-                borderColor: editingMemberId === m.id ? "var(--primary-dark)" : "#f0f0f0" }}>
-                {editingMemberId === m.id ? (
-                  <>
-                    <p style={{ fontSize: 14, fontWeight: 600, color: "var(--gray2)", marginBottom: 14 }}>Bewerken</p>
-                    <MemberForm
-                      initial={m}
-                      onSave={(updated) => { updateTeamMember(m.id, updated); setEditingMemberId(null); showToast("Teamlid bijgewerkt.", "success"); }}
-                      onCancel={() => setEditingMemberId(null)}
-                    />
-                  </>
-                ) : (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <Avatar m={m} size={44} />
-                      <div>
-                        <p style={{ fontSize: 14, fontWeight: 600, color: "var(--gray1)", marginBottom: 2 }}>{m.name}</p>
-                        <p style={{ fontSize: 12, color: "var(--gray3)" }}>{m.role}{m.role && m.email ? " · " : ""}{m.email}</p>
-                        {m.phone && <p style={{ fontSize: 12, color: "var(--gray4)" }}>{m.phone}</p>}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button className="btn-outline" onClick={() => { setEditingMemberId(m.id); setAddingMember(false); }}
-                        style={{ padding: "6px 12px", display: "flex", alignItems: "center", gap: 5, fontSize: 13 }}>
-                        <Pencil size={12} /> Bewerken
-                      </button>
-                      <button onClick={() => setDeleteTeamMemberId(m.id)}
-                        className="icon-btn-danger">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
         <div className="card" style={{ marginTop: 24 }}>
-          <p style={sec}>Supportpakket instellingen</p>
-          <p style={sub}>Per klant: inbegrepen support-uren per cyclus. Cyclus reset gebeurt automatisch.</p>
-          <div style={{ display: "grid", gridTemplateColumns: "220px 220px auto", gap: 12, alignItems: "end" }}>
-            <div>
-              <label style={lbl}>Uren per cyclus</label>
-              <input
-                type="number"
-                min={0}
-                value={supportPolicy.hoursPerCycle}
-                onChange={(e) => updateSupportPolicy({ hoursPerCycle: Number(e.target.value) || 0 })}
-              />
-            </div>
-            <div>
-              <label style={lbl}>Cyclus in maanden</label>
-              <input
-                type="number"
-                min={1}
-                value={supportPolicy.cycleMonths}
-                onChange={(e) => updateSupportPolicy({ cycleMonths: Math.max(1, Number(e.target.value) || 1) })}
-              />
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn-outline" onClick={() => { const count = resetClientSupportHoursIfNeeded(); showToast(`Automatische reset uitgevoerd voor ${count} klant(en).`, "info"); }}>
-                Reset indien nodig
-              </button>
-              <button className="btn-primary" onClick={() => { const count = resetClientSupportHoursNow(); showToast(`Supporturen direct gereset voor ${count} klant(en).`, "success"); }}>
-                Force reset nu
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <Mail size={18} color="var(--primary-dark)" />
+            <p style={sec}>E-mail templates</p>
+          </div>
+          <p style={sub}>
+            Gebruik HTML voor professioneel gestylede e-mails. HTML wordt automatisch gesanitized (scripts/events worden verwijderd).
+            Beschikbare placeholders: {"{documentId}"}, {"{clientName}"}, {"{clientCompany}"}, {"{contactName}"}, {"{toEmail}"}, {"{sentAt}"}.
+          </p>
+          <div style={{ marginBottom: 12, border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#fff" }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: "var(--gray2)", marginBottom: 8 }}>1) Presets beheren</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: 8 }}>
+              <select
+                value={emailTemplates.selectedTemplatePresetId}
+                onChange={async (e) => {
+                  const selected = emailTemplates.templatePresets.find((p) => p.id === e.target.value);
+                  if (!selected) return;
+                  const nextTemplates = {
+                    ...emailTemplates,
+                    selectedTemplatePresetId: selected.id,
+                    documentSubjectTemplate: selected.documentSubjectTemplate,
+                    documentHtmlTemplate: selected.documentHtmlTemplate,
+                    confirmationHtmlTemplate: selected.confirmationHtmlTemplate,
+                  };
+                  setEmailTemplates(nextTemplates);
+                  updateEmailIntegration({
+                    selectedTemplatePresetId: nextTemplates.selectedTemplatePresetId,
+                    templatePresets: nextTemplates.templatePresets,
+                    documentSubjectTemplate: nextTemplates.documentSubjectTemplate,
+                    documentHtmlTemplate: nextTemplates.documentHtmlTemplate,
+                    confirmationHtmlTemplate: nextTemplates.confirmationHtmlTemplate,
+                    confirmationEmails: nextTemplates.confirmationEmails,
+                  });
+                  const ok = await saveSettingsPatch({
+                    emailIntegration: {
+                      ...emailIntegration,
+                      selectedTemplatePresetId: nextTemplates.selectedTemplatePresetId,
+                      templatePresets: nextTemplates.templatePresets,
+                      documentSubjectTemplate: nextTemplates.documentSubjectTemplate,
+                      documentHtmlTemplate: nextTemplates.documentHtmlTemplate,
+                      confirmationHtmlTemplate: nextTemplates.confirmationHtmlTemplate,
+                      confirmationEmails: nextTemplates.confirmationEmails,
+                    },
+                  });
+                  if (!ok) {
+                    showToast("Preset lokaal gekozen, maar DB-opslag mislukte.", "error");
+                    return;
+                  }
+                  showToast("Preset opgeslagen in database.", "success");
+                  setEmailTemplates((s) => ({
+                    ...s,
+                    selectedTemplatePresetId: selected.id,
+                    documentSubjectTemplate: selected.documentSubjectTemplate,
+                    documentHtmlTemplate: selected.documentHtmlTemplate,
+                    confirmationHtmlTemplate: selected.confirmationHtmlTemplate,
+                  }));
+                }}
+              >
+                {emailTemplates.templatePresets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>{preset.name}</option>
+                ))}
+              </select>
+              <button
+                className="btn-outline"
+                onClick={() => setCreateTemplateModalOpen(true)}
+              >
+                Nieuwe template
               </button>
             </div>
           </div>
+          <div style={{ marginBottom: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#fff" }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--gray2)", marginBottom: 8 }}>2) Template editor</p>
+              <div style={{ marginBottom: 12 }}>
+                <label style={lbl}>Onderwerp template</label>
+                <input
+                  value={emailTemplates.documentSubjectTemplate}
+                  onChange={(e) => setEmailTemplates((s) => ({ ...s, documentSubjectTemplate: e.target.value }))}
+                  placeholder="Factuur {documentId}"
+                />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={lbl}>Bericht HTML template</label>
+                <textarea
+                  rows={9}
+                  value={emailTemplates.documentHtmlTemplate}
+                  onChange={(e) => setEmailTemplates((s) => ({ ...s, documentHtmlTemplate: e.target.value }))}
+                  placeholder={"<p>Beste {clientName},</p><p>In de bijlage vind je factuur <strong>{documentId}</strong>.</p><p>Met vriendelijke groet,<br />{contactName}</p>"}
+                />
+              </div>
+              <div style={{ marginBottom: 0 }}>
+                <label style={lbl}>Bevestiging HTML template</label>
+                <textarea
+                  rows={7}
+                  value={emailTemplates.confirmationHtmlTemplate}
+                  onChange={(e) => setEmailTemplates((s) => ({ ...s, confirmationHtmlTemplate: e.target.value }))}
+                  placeholder={"<p>Document <strong>{documentId}</strong> is verzonden naar <a href=\"mailto:{toEmail}\">{toEmail}</a> op {sentAt}.</p>"}
+                />
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <label style={lbl}>Bevestigingsmails naar app-users</label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 160, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}>
+                  {userOptions.map((user) => {
+                    const checked = emailTemplates.confirmationEmails.includes(user.email);
+                    return (
+                      <label key={user.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--gray2)" }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            setEmailTemplates((state) => ({
+                              ...state,
+                              confirmationEmails: e.target.checked
+                                ? [...state.confirmationEmails, user.email]
+                                : state.confirmationEmails.filter((mail) => mail !== user.email),
+                            }));
+                          }}
+                        />
+                        <span>{user.name ? `${user.name} (${user.email})` : user.email}</span>
+                      </label>
+                    );
+                  })}
+                  {userOptions.length === 0 && (
+                    <p style={{ fontSize: 12, color: "var(--gray4)", margin: 0 }}>Geen users gevonden of je bent niet als admin ingelogd.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#fff" }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--gray2)", marginBottom: 8 }}>3) Live preview (gesanitized)</p>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, background: "#fff" }}>
+                <p style={{ fontSize: 12, color: "var(--gray3)", marginBottom: 6 }}>Document e-mail</p>
+                <div
+                  style={{ fontSize: 13, color: "var(--gray2)" }}
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizeHtmlEmail(
+                      renderEmailTemplate(emailTemplates.documentHtmlTemplate, sampleTemplateContext()),
+                    ),
+                  }}
+                />
+              </div>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, background: "#fff" }}>
+                <p style={{ fontSize: 12, color: "var(--gray3)", marginBottom: 6 }}>Bevestiging</p>
+                <div
+                  style={{ fontSize: 13, color: "var(--gray2)" }}
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizeHtmlEmail(
+                      renderEmailTemplate(emailTemplates.confirmationHtmlTemplate, sampleTemplateContext()),
+                    ),
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+          <button
+            className="btn-primary"
+            onClick={async () => {
+              const activePresetIdx = emailTemplates.templatePresets.findIndex((p) => p.id === emailTemplates.selectedTemplatePresetId);
+              const nextPresets = [...emailTemplates.templatePresets];
+              if (activePresetIdx >= 0) {
+                nextPresets[activePresetIdx] = {
+                  ...nextPresets[activePresetIdx],
+                  documentSubjectTemplate: emailTemplates.documentSubjectTemplate.trim() || "Factuur {documentId}",
+                  documentHtmlTemplate:
+                    emailTemplates.documentHtmlTemplate.trim() ||
+                    "<p>Beste {clientName},</p><p>In de bijlage vind je factuur <strong>{documentId}</strong>.</p><p>Met vriendelijke groet,<br />{contactName}</p>",
+                  confirmationHtmlTemplate:
+                    emailTemplates.confirmationHtmlTemplate.trim() ||
+                    "<p>Document <strong>{documentId}</strong> is verzonden naar <a href=\"mailto:{toEmail}\">{toEmail}</a> op {sentAt}.</p>",
+                };
+              }
+              const nextEmailIntegration = {
+                documentSubjectTemplate: emailTemplates.documentSubjectTemplate.trim() || "Factuur {documentId}",
+                documentHtmlTemplate:
+                  emailTemplates.documentHtmlTemplate.trim() ||
+                  "<p>Beste {clientName},</p><p>In de bijlage vind je factuur <strong>{documentId}</strong>.</p><p>Met vriendelijke groet,<br />{contactName}</p>",
+                confirmationHtmlTemplate:
+                  emailTemplates.confirmationHtmlTemplate.trim() ||
+                  "<p>Document <strong>{documentId}</strong> is verzonden naar <a href=\"mailto:{toEmail}\">{toEmail}</a> op {sentAt}.</p>",
+                documentBodyTemplate: "Legacy plaintext template is now derived from HTML.",
+                confirmationBodyTemplate: "Legacy plaintext confirmation is now derived from HTML.",
+                confirmationEmails: emailTemplates.confirmationEmails,
+                templatePresets: nextPresets,
+                selectedTemplatePresetId: emailTemplates.selectedTemplatePresetId,
+              } as const;
+              updateEmailIntegration({
+                ...nextEmailIntegration,
+              });
+              const response = await fetch("/api/settings", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ emailIntegration: nextEmailIntegration }),
+              });
+              if (!response.ok) {
+                showToast("Templates lokaal bijgewerkt, maar DB-opslag mislukte.", "error");
+                return;
+              }
+              showToast("E-mail templates opgeslagen in database.", "success");
+            }}
+          >
+            Templates opslaan
+          </button>
+          <button
+            className="btn-danger"
+            style={{ marginLeft: 8 }}
+            onClick={async () => {
+              const selected = emailTemplates.selectedTemplatePresetId;
+              if (selected === "default") {
+                showToast("Standaard template kan niet verwijderd worden.", "error");
+                return;
+              }
+              const filtered = emailTemplates.templatePresets.filter((p) => p.id !== selected);
+              const nextState = {
+                ...emailTemplates,
+                templatePresets: filtered,
+                selectedTemplatePresetId: filtered[0]?.id || "default",
+              };
+              setEmailTemplates((s) => ({
+                ...s,
+                templatePresets: filtered,
+                selectedTemplatePresetId: filtered[0]?.id || "default",
+              }));
+              updateEmailIntegration({
+                templatePresets: nextState.templatePresets,
+                selectedTemplatePresetId: nextState.selectedTemplatePresetId,
+              });
+              const ok = await saveSettingsPatch({
+                emailIntegration: {
+                  ...emailIntegration,
+                  confirmationEmails: nextState.confirmationEmails,
+                  templatePresets: nextState.templatePresets,
+                  selectedTemplatePresetId: nextState.selectedTemplatePresetId,
+                },
+              });
+              if (!ok) {
+                showToast("Template lokaal verwijderd, maar DB-opslag mislukte.", "error");
+                return;
+              }
+              showToast("Template verwijderd.", "success");
+            }}
+          >
+            Geselecteerde preset verwijderen
+          </button>
         </div>
         <div className="card" style={{ marginTop: 24 }}>
           <p style={sec}>Snelle regelsjablonen</p>
@@ -318,21 +475,6 @@ export default function Instellingen() {
           </div>
         </div>
         <div className="card" style={{ marginTop: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <Mail size={18} color="var(--primary-dark)" />
-            <p style={sec}>E-mail integratie</p>
-          </div>
-          <p style={sub}>Zero-trust modus: e-mail instellingen komen uitsluitend uit server environment variables.</p>
-          <div style={{ background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
-            <p style={{ fontSize: 12, color: "var(--gray3)", marginBottom: 4 }}>
-              Configureer in `.env`: `EMAIL_PROVIDER`, `EMAIL_FROM`, `EMAIL_CONFIRMATION_TO` en provider keys.
-            </p>
-            <p style={{ fontSize: 12, color: "var(--gray3)" }}>
-              Front-end velden zijn uitgeschakeld zodat clients geen mail provider/keys kunnen overriden.
-            </p>
-          </div>
-        </div>
-        <div className="card" style={{ marginTop: 24 }}>
           <p style={sec}>BTW-export</p>
           <p style={sub}>Exporteer kwartaaloverzicht voor belastingaangifte.</p>
           <button
@@ -354,20 +496,90 @@ export default function Instellingen() {
             <Download size={14} /> Exporteer BTW CSV
           </button>
         </div>
-        <ConfirmModal
-          open={Boolean(deleteTeamMemberId)}
-          title="Teamlid verwijderen"
-          message="Weet je zeker dat je dit teamlid wilt verwijderen?"
-          confirmLabel="Ja, verwijderen"
-          onCancel={() => setDeleteTeamMemberId(null)}
-          onConfirm={() => {
-            if (deleteTeamMemberId) {
-              deleteTeamMember(deleteTeamMemberId);
-              showToast("Teamlid verwijderd.", "success");
-            }
-            setDeleteTeamMemberId(null);
-          }}
-        />
+        {createTemplateModalOpen && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.35)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 50,
+            }}
+            onClick={() => setCreateTemplateModalOpen(false)}
+          >
+            <div
+              className="card"
+              style={{ width: 460, maxWidth: "92vw", padding: 16 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p style={{ ...sec, marginBottom: 10 }}>Nieuwe template maken</p>
+              <p style={{ ...sub, marginBottom: 12 }}>
+                Sla de huidige editor-inhoud op als nieuwe preset.
+              </p>
+              <label style={lbl}>Template naam</label>
+              <input
+                value={newTemplateName}
+                onChange={(e) => setNewTemplateName(e.target.value)}
+                placeholder="Bijv. Modern blauw"
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+                <button className="btn-outline" onClick={() => setCreateTemplateModalOpen(false)}>
+                  Annuleren
+                </button>
+                <button
+                  className="btn-primary"
+                  onClick={async () => {
+                    const name = newTemplateName.trim();
+                    if (!name) {
+                      showToast("Geef eerst een template naam op.", "error");
+                      return;
+                    }
+                    const nextPreset: EmailTemplatePreset = {
+                      id: uid(),
+                      name,
+                      documentSubjectTemplate: emailTemplates.documentSubjectTemplate,
+                      documentHtmlTemplate: emailTemplates.documentHtmlTemplate,
+                      confirmationHtmlTemplate: emailTemplates.confirmationHtmlTemplate,
+                    };
+                    const nextTemplates = {
+                      ...emailTemplates,
+                      templatePresets: [...emailTemplates.templatePresets, nextPreset],
+                      selectedTemplatePresetId: nextPreset.id,
+                    };
+                    setEmailTemplates((s) => ({
+                      ...s,
+                      templatePresets: [...s.templatePresets, nextPreset],
+                      selectedTemplatePresetId: nextPreset.id,
+                    }));
+                    updateEmailIntegration({
+                      templatePresets: nextTemplates.templatePresets,
+                      selectedTemplatePresetId: nextTemplates.selectedTemplatePresetId,
+                    });
+                    const ok = await saveSettingsPatch({
+                      emailIntegration: {
+                        ...emailIntegration,
+                  confirmationEmails: nextTemplates.confirmationEmails,
+                        templatePresets: nextTemplates.templatePresets,
+                        selectedTemplatePresetId: nextTemplates.selectedTemplatePresetId,
+                      },
+                    });
+                    if (!ok) {
+                      showToast("Template lokaal opgeslagen, maar DB-opslag mislukte.", "error");
+                      return;
+                    }
+                    setNewTemplateName("");
+                    setCreateTemplateModalOpen(false);
+                    showToast("Template opgeslagen.", "success");
+                  }}
+                >
+                  Maken
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

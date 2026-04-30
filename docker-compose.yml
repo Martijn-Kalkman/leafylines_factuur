@@ -1,0 +1,44 @@
+version: "3.8"
+
+services:
+  mongo:
+    image: mongo:6
+    container_name: leafylines_factuur_mongo
+    restart: unless-stopped
+    # DO NOT expose port 27017 → internal only
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  leafylines_factuur:
+    image: ghcr.io/leafylinesdev/leafylines_factuur:latest
+    container_name: leafylines_factuur
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    # Host 3010 → app in container on 3000 (must match Dockerfile PORT)
+    ports:
+      - "3010:3000"
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      MONGODB_URI: mongodb://mongo:27017/leafylines
+      MONGODB_DB_NAME: leafylines
+      AUTH_SECRET: ${AUTH_SECRET}
+      JWT_TTL_SECONDS: ${JWT_TTL_SECONDS}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      AUTH_URL: ${AUTH_URL}
+      ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER}
+      EMAIL_FROM: ${EMAIL_FROM}
+      EMAIL_CONFIRMATION_TO: ${EMAIL_CONFIRMATION_TO}
+
+volumes:
+  mongodb_data:
