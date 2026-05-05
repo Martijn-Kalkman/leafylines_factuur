@@ -15,22 +15,16 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-function toastColor(type: ToastType): string {
-  if (type === "success") return "#27AE50";
-  if (type === "error") return "#E85757";
-  return "#3F80ED";
-}
-
-function toastAccent(type: ToastType): string {
-  if (type === "success") return "#baf0ca";
-  if (type === "error") return "#ffd0d0";
-  return "#cbdfff";
-}
-
 function toastIcon(type: ToastType): string {
   if (type === "success") return "✓";
   if (type === "error") return "⚠";
   return "i";
+}
+
+function toastClass(type: ToastType): string {
+  if (type === "success") return "border-[#baf0ca] bg-[var(--success)]";
+  if (type === "error") return "border-[#ffd0d0] bg-[var(--error)]";
+  return "border-[#cbdfff] bg-[var(--accent)]";
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -49,31 +43,20 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div style={{ position: "fixed", top: 20, right: 20, zIndex: 2000, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="fixed right-5 top-5 z-[2000] flex flex-col gap-2.5">
         {toasts.map((t) => (
           <div
             key={t.id}
-            style={{
-              minWidth: 240,
-              maxWidth: 420,
-              padding: "10px 12px 12px",
-              borderRadius: 12,
-              color: "white",
-              fontSize: 13,
-              fontWeight: 500,
-              border: `1px solid ${toastAccent(t.type)}`,
-              boxShadow: "0 12px 28px rgba(0,0,0,.18)",
-              background: toastColor(t.type),
-            }}
+            className={`w-[min(420px,88vw)] rounded-xl border px-3 py-2.5 text-[13px] font-medium text-white shadow-[0_12px_28px_rgba(0,0,0,.18)] ${toastClass(t.type)}`}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ width: 22, height: 22, borderRadius: 999, background: "rgba(255,255,255,.22)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>
+            <div className="flex items-center gap-2.5">
+              <span className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full bg-white/25 text-xs font-bold">
                 {toastIcon(t.type)}
               </span>
-              <span style={{ lineHeight: 1.3 }}>{t.message}</span>
+              <span className="leading-[1.3]">{t.message}</span>
             </div>
-            <div style={{ marginTop: 8, height: 3, width: "100%", borderRadius: 999, background: "rgba(255,255,255,.3)" }}>
-              <div style={{ height: 3, width: "100%", borderRadius: 999, background: "rgba(255,255,255,.9)" }} />
+            <div className="mt-2 h-[3px] w-full rounded-full bg-white/35">
+              <div className="h-[3px] w-full rounded-full bg-white/90" />
             </div>
           </div>
         ))}

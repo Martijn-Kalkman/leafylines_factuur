@@ -2,10 +2,10 @@
 import { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
 import { useToast } from "@/components/ToastProvider";
-import { useStore, EmailTemplatePreset, btwPerKwartaal } from "@/store/useStore";
+import { useStore, EmailTemplatePreset } from "@/store/useStore";
 import { renderEmailTemplate } from "@/lib/emailTemplates";
 import { sanitizeHtmlEmail } from "@/lib/htmlEmail";
-import { Check, Building2, Download, Mail } from "lucide-react";
+import { Check, Building2, Mail } from "lucide-react";
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 function normalizeWebsiteUrl(value: string): string {
@@ -116,9 +116,9 @@ export default function Instellingen() {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div className="flex min-h-screen">
       <Sidebar />
-      <main className="app-main" style={{ background: "#f5f6fa", maxWidth: "calc(100vw - 220px)" }}>
+      <main className="app-main bg-[var(--app-bg)]">
         <h1 style={{ fontSize: 24, fontWeight: 600, color: "var(--gray1)", marginBottom: 4 }}>Instellingen</h1>
         <p style={{ fontSize: 13, color: "var(--gray3)", marginBottom: 32 }}>Beheer je bedrijfsgegevens en templates</p>
 
@@ -136,7 +136,7 @@ export default function Instellingen() {
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
+          <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
             {([
               ["name",    "Bedrijfsnaam *",    "LeafyLines"],
               ["address", "Adres",             "Straat 1"],
@@ -212,7 +212,7 @@ export default function Instellingen() {
             Gebruik HTML voor professioneel gestylede e-mails. HTML wordt automatisch gesanitized (scripts/events worden verwijderd).
             Beschikbare placeholders: {"{documentId}"}, {"{clientName}"}, {"{clientCompany}"}, {"{contactName}"}, {"{toEmail}"}, {"{sentAt}"}.
           </p>
-          <div style={{ marginBottom: 12, border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#fff" }}>
+          <div style={{ marginBottom: 12, border: "1px solid var(--border-soft)", borderRadius: 10, padding: 12, background: "var(--surface)" }}>
             <p style={{ fontSize: 12, fontWeight: 600, color: "var(--gray2)", marginBottom: 8 }}>1) Presets beheren</p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: 8 }}>
               <select
@@ -273,8 +273,8 @@ export default function Instellingen() {
               </button>
             </div>
           </div>
-          <div style={{ marginBottom: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#fff" }}>
+          <div className="mb-3 grid grid-cols-1 gap-2.5 xl:grid-cols-2">
+            <div style={{ border: "1px solid var(--border-soft)", borderRadius: 10, padding: 12, background: "var(--surface)" }}>
               <p style={{ fontSize: 12, fontWeight: 600, color: "var(--gray2)", marginBottom: 8 }}>2) Template editor</p>
               <div style={{ marginBottom: 12 }}>
                 <label style={lbl}>Onderwerp template</label>
@@ -303,12 +303,12 @@ export default function Instellingen() {
                 />
               </div>
               <div style={{ marginTop: 12 }}>
-                <label style={lbl}>Bevestigingsmails naar app-users</label>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 160, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}>
+                <label className="mb-1 block text-left text-xs text-[var(--gray3)]">Bevestigingsmails naar app-users</label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 160, overflowY: "auto", border: "1px solid var(--border-soft)", borderRadius: 8, padding: 10, background: "var(--surface-soft)" }}>
                   {userOptions.map((user) => {
                     const checked = emailTemplates.confirmationEmails.includes(user.email);
                     return (
-                      <label key={user.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--gray2)" }}>
+                      <label key={user.id} className="flex items-center gap-2 text-left text-[13px] text-[var(--gray2)]">
                         <input
                           type="checkbox"
                           checked={checked}
@@ -331,9 +331,9 @@ export default function Instellingen() {
                 </div>
               </div>
             </div>
-            <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#fff" }}>
+            <div style={{ border: "1px solid var(--border-soft)", borderRadius: 10, padding: 12, background: "var(--surface)" }}>
               <p style={{ fontSize: 12, fontWeight: 600, color: "var(--gray2)", marginBottom: 8 }}>3) Live preview (gesanitized)</p>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, background: "#fff" }}>
+              <div style={{ border: "1px solid var(--border-soft)", borderRadius: 8, padding: 12, background: "var(--surface-soft)" }}>
                 <p style={{ fontSize: 12, color: "var(--gray3)", marginBottom: 6 }}>Document e-mail</p>
                 <div
                   style={{ fontSize: 13, color: "var(--gray2)" }}
@@ -344,7 +344,7 @@ export default function Instellingen() {
                   }}
                 />
               </div>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, background: "#fff" }}>
+              <div style={{ border: "1px solid var(--border-soft)", borderRadius: 8, padding: 12, background: "var(--surface-soft)" }}>
                 <p style={{ fontSize: 12, color: "var(--gray3)", marginBottom: 6 }}>Bevestiging</p>
                 <div
                   style={{ fontSize: 13, color: "var(--gray2)" }}
@@ -388,13 +388,17 @@ export default function Instellingen() {
                 templatePresets: nextPresets,
                 selectedTemplatePresetId: emailTemplates.selectedTemplatePresetId,
               } as const;
-              updateEmailIntegration({
+              const persistedEmailIntegration = {
+                ...emailIntegration,
                 ...nextEmailIntegration,
+              };
+              updateEmailIntegration({
+                ...persistedEmailIntegration,
               });
               const response = await fetch("/api/settings", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ emailIntegration: nextEmailIntegration }),
+                body: JSON.stringify({ emailIntegration: persistedEmailIntegration }),
               });
               if (!response.ok) {
                 showToast("Templates lokaal bijgewerkt, maar DB-opslag mislukte.", "error");
@@ -406,8 +410,7 @@ export default function Instellingen() {
             Templates opslaan
           </button>
           <button
-            className="btn-danger"
-            style={{ marginLeft: 8 }}
+            className="btn-danger mt-2 md:ml-2 md:mt-0"
             onClick={async () => {
               const selected = emailTemplates.selectedTemplatePresetId;
               if (selected === "default") {
@@ -450,9 +453,9 @@ export default function Instellingen() {
         <div className="card" style={{ marginTop: 24 }}>
           <p style={sec}>Snelle regelsjablonen</p>
           <p style={sub}>Maak vaste diensten die je met 1 klik toevoegt bij nieuwe facturen.</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          <div className="mb-3 flex flex-col gap-2">
             {lineTemplates.map((t) => (
-              <div key={t.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr 120px 90px", gap: 8 }}>
+              <div key={t.id} className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_2fr_120px_90px]">
                 <input value={t.title} onChange={(e) => updateLineTemplate(t.id, { title: e.target.value })} />
                 <input value={t.product} onChange={(e) => updateLineTemplate(t.id, { product: e.target.value })} />
                 <input value={t.description} onChange={(e) => updateLineTemplate(t.id, { description: e.target.value })} />
@@ -461,7 +464,7 @@ export default function Instellingen() {
               </div>
             ))}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr 120px 90px", gap: 8 }}>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_2fr_120px_90px]">
             <input placeholder="Titel" value={newTemplate.title} onChange={(e) => setNewTemplate((s) => ({ ...s, title: e.target.value }))} />
             <input placeholder="Product" value={newTemplate.product} onChange={(e) => setNewTemplate((s) => ({ ...s, product: e.target.value }))} />
             <input placeholder="Omschrijving" value={newTemplate.description} onChange={(e) => setNewTemplate((s) => ({ ...s, description: e.target.value }))} />
@@ -474,34 +477,12 @@ export default function Instellingen() {
             }}>Toevoegen</button>
           </div>
         </div>
-        <div className="card" style={{ marginTop: 24 }}>
-          <p style={sec}>BTW-export</p>
-          <p style={sub}>Exporteer kwartaaloverzicht voor belastingaangifte.</p>
-          <button
-            className="btn-outline"
-            style={{ display: "flex", alignItems: "center", gap: 6 }}
-            onClick={() => {
-              const rows = Object.entries(btwPerKwartaal(documents)).sort((a, b) => a[0].localeCompare(b[0]));
-              const csv = ["kwartaal,btw_bedrag", ...rows.map(([q, amount]) => `${q},${amount.toFixed(2)}`)].join("\n");
-              const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = "leafylines-btw-kwartaal.csv";
-              a.click();
-              URL.revokeObjectURL(url);
-              showToast("BTW-export gedownload.", "success");
-            }}
-          >
-            <Download size={14} /> Exporteer BTW CSV
-          </button>
-        </div>
         {createTemplateModalOpen && (
           <div
             style={{
               position: "fixed",
               inset: 0,
-              background: "rgba(0,0,0,0.35)",
+              background: "rgba(2,6,23,0.6)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",

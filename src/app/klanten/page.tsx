@@ -51,7 +51,7 @@ function ClientForm({ initial, onSave, onCancel }: {
           ))}
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+      <div className="grid grid-cols-1 gap-x-4 md:grid-cols-2">
         <div style={fld}>
           <label style={lbl}>Bedrijfsnaam *</label>
           <input value={form.company} onChange={(e) => set("company", e.target.value)} placeholder="Acme BV"
@@ -87,7 +87,7 @@ function ClientForm({ initial, onSave, onCancel }: {
         <label style={lbl}>Notities</label>
         <textarea rows={2} value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Extra informatie..." />
       </div>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+      <div className="mt-1 flex flex-col justify-end gap-2 sm:flex-row">
         <button className="btn-outline" onClick={onCancel} style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <X size={13} /> Annuleren
         </button>
@@ -167,19 +167,19 @@ export default function Klanten() {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div className="flex min-h-screen">
       <Sidebar />
-      <main className="app-main" style={{ background: "#f5f6fa" }}>
+      <main className="app-main bg-[var(--app-bg)]">
 
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+        <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 style={{ fontSize: 24, fontWeight: 600, color: "var(--gray1)", marginBottom: 2 }}>Klanten</h1>
             <p style={{ fontSize: 13, color: "var(--gray3)" }}>
               {hydrated ? `${clients.length} klant${clients.length !== 1 ? "en" : ""} opgeslagen` : "Laden..."}
             </p>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="flex flex-wrap gap-2">
             {clients.length > 0 && (
               <button className="btn-outline" onClick={handleExport}
                 style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -235,15 +235,15 @@ export default function Klanten() {
             <p style={{ fontSize: 12 }}>Je kunt ook een JSON-bestand importeren via de knop rechtsboven.</p>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="flex flex-col gap-3">
             {clients.map((c) => (
-              <div key={c.id} className="card" style={{
+              <div key={c.id} className="card transition-colors hover:bg-[var(--surface-muted)]" style={{
                 borderColor: "#f0f0f0",
                 borderWidth: 1,
                 cursor: "pointer",
               }} onClick={() => router.push(`/klanten/${c.id}`)}>
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-start gap-4">
                       <div style={{
                         width: 42, height: 42, borderRadius: 10, background: "var(--primary)",
                         display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
@@ -264,7 +264,7 @@ export default function Klanten() {
                         </div>
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    <div className="flex shrink-0 gap-2">
                       <button onClick={(e) => { e.stopPropagation(); setDeleteClientId(c.id); }} className="icon-btn-danger">
                         <Trash2 size={13} />
                       </button>

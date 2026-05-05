@@ -6,6 +6,7 @@ import { requireAuth } from "@/lib/security/authz";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { appendAuditLog } from "@/lib/security/auditLog";
 import { requireSameOrigin } from "@/lib/security/requestGuards";
+import { settingsPayloadSchema } from "@/lib/security/validation";
 
 export async function GET() {
   const user = await requireAuth();
@@ -36,29 +37,51 @@ export async function PUT(request: Request) {
   const rate = await checkRateLimit(`settings:put:${user.id}`, 600, 60 * 1000);
   if (!rate.allowed) return NextResponse.json({ error: "Too many settings updates." }, { status: 429 });
 
-  const payload = await request.json();
+  const parsedPayload = settingsPayloadSchema.safeParse(await request.json());
+  if (!parsedPayload.success) {
+    return NextResponse.json({ error: "Invalid settings payload." }, { status: 400 });
+  }
+  const payload = parsedPayload.data;
   const payloadSize = JSON.stringify(payload).length;
   if (payloadSize > 2_000_000) {
     return NextResponse.json({ error: "Settings payload too large." }, { status: 413 });
   }
 
-  await connectToDatabase();
-  const existing = await SettingModel.findOne({ key: "global" }).lean();
-  const merged = {
-    key: "global",
-    documents: payload.documents ?? existing?.documents ?? defaultSettingsData.documents,
-    team: payload.team ?? existing?.team ?? defaultSettingsData.team,
-    company: payload.company ?? existing?.company ?? defaultSettingsData.company,
-    clientNotes: payload.clientNotes ?? existing?.clientNotes ?? defaultSettingsData.clientNotes,
-    lineTemplates: payload.lineTemplates ?? existing?.lineTemplates ?? defaultSettingsData.lineTemplates,
-    emailIntegration: payload.emailIntegration ?? existing?.emailIntegration ?? defaultSettingsData.emailIntegration,
-  };
-  await SettingModel.findOneAndUpdate(
-    { key: "global" },
-    { $set: merged },
-    { upsert: true },
-  );
+  try {
+    await connectToDatabase();
+    const existing = await SettingModel.findOne({ key: "global" }).lean();
+    const merged = {
+      key: "global",
+      documents: payload.documents ?? existing?.documents ?? defaultSettingsData.documents,
+      team: payload.team ?? existing?.team ?? defaultSettingsData.team,
+      company: payload.company ?? existing?.company ?? defaultSettingsData.company,
+      clientNotes: payload.clientNotes ?? existing?.clientNotes ?? defaultSettingsData.clientNotes,
+      lineTemplates: payload.lineTemplates ?? existing?.lineTemplates ?? defaultSettingsData.lineTemplates,
+      emailIntegration: payload.emailIntegration ?? existing?.emailIntegration ?? defaultSettingsData.emailIntegration,
+    };
+    const persisted = await SettingModel.findOneAndUpdate(
+      { key: "global" },
+      { $set: merged },
+      {
+        upsert: true,
+        new: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+    if (!persisted) {
+      throw new Error("Settings update did not persist.");
+    }
 
-  await appendAuditLog(user.id, "settings.sync", { payloadSize });
-  return NextResponse.json({ ok: true });
+    // Never block workspace persistence on telemetry/audit failures.
+    try {
+      await appendAuditLog(user.id, "settings.sync", { payloadSize });
+    } catch (auditError) {
+      console.warn("settings.sync audit log failed", auditError);
+    }
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("settings.sync failed", error);
+    return NextResponse.json({ error: "Failed to save settings." }, { status: 500 });
+  }
 }

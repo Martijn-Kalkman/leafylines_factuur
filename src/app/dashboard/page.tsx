@@ -79,9 +79,9 @@ export default function Dashboard() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="app-main">
-        <div className="flex items-center justify-between mb-1">
-          <h1 className="text-2xl font-semibold" style={{ color: "var(--gray1)" }}>Dashboard</h1>
+      <main className="app-main space-y-6">
+        <div className="mb-1 flex items-center justify-between">
+          <h1>Dashboard</h1>
           <div className="flex items-center gap-2">
             <button className="btn-outline text-xs" onClick={exportAllData}>Export JSON</button>
             <button className="btn-outline text-xs" onClick={() => importInputRef.current?.click()}>Import JSON</button>
@@ -89,7 +89,7 @@ export default function Dashboard() {
               ref={importInputRef}
               type="file"
               accept="application/json"
-              style={{ display: "none" }}
+              className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
@@ -99,17 +99,17 @@ export default function Dashboard() {
             />
           </div>
         </div>
-        <p className="text-sm mb-6" style={{ color: "var(--gray3)" }}>Welkom terug bij LeafyLines</p>
+        <p className="mb-6 text-sm text-[var(--gray3)]">Welkom terug bij LeafyLines</p>
 
         <div className="grid grid-cols-4 gap-4 mb-8">
           {kpis.map(({ label, value, icon: Icon, color, bg }) => (
             <div key={label} className="card flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: bg }}>
+              <div className="h-10 w-10 flex-shrink-0 rounded-xl" style={{ background: bg, display: "grid", placeItems: "center" }}>
                 <Icon size={18} color={color} />
               </div>
               <div>
-                <p className="text-xs mb-0.5" style={{ color: "var(--gray3)" }}>{label}</p>
-                <p className="font-semibold text-base" style={{ color: "var(--gray1)" }}>{value}</p>
+                <p className="mb-0.5 text-xs text-[var(--gray3)]">{label}</p>
+                <p className="text-base font-semibold text-[var(--gray1)]">{value}</p>
               </div>
             </div>
           ))}
@@ -117,7 +117,7 @@ export default function Dashboard() {
 
         <div className="card">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-sm" style={{ color: "var(--gray1)" }}>Recente documenten</h2>
+            <h2 className="text-sm font-semibold text-[var(--gray1)]">Recente documenten</h2>
             <button className="btn-outline text-xs" onClick={() => router.push("/documenten")}>Alle bekijken</button>
           </div>
           <table>
@@ -130,13 +130,13 @@ export default function Dashboard() {
               {recent.map((d) => {
                 const { total } = calcTotals(d.items, d.btwRate);
                 return (
-                  <tr key={d.id} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
+                  <tr key={d.id} className="cursor-pointer border-b border-gray-50 transition-colors hover:bg-[var(--surface-muted)]"
                     onClick={() => router.push(`/documenten/${d.id}`)}>
-                    <td className="font-medium text-xs" style={{ color: "var(--gray1)" }}>{d.id}</td>
-                    <td><span className="capitalize text-xs px-2 py-0.5 rounded" style={{ background: d.type === "factuur" ? "#e6f9f6" : "#f0eeff", color: d.type === "factuur" ? "#1a6b61" : "#4a35a8" }}>{d.type}</span></td>
-                    <td className="text-xs" style={{ color: "var(--gray2)" }}>{d.client}</td>
-                    <td className="text-xs" style={{ color: "var(--gray3)" }}>{d.date}</td>
-                    <td className="text-xs font-medium" style={{ color: "var(--gray1)" }}>{fmt(total)}</td>
+                    <td className="text-xs font-medium text-[var(--gray1)]">{d.id}</td>
+                    <td><span className={`rounded px-2 py-0.5 text-xs capitalize ${d.type === "factuur" ? "bg-[#e6f9f6] text-[#1a6b61]" : "bg-[#f0eeff] text-[#4a35a8]"}`}>{d.type}</span></td>
+                    <td className="text-xs text-[var(--gray2)]">{d.client}</td>
+                    <td className="text-xs text-[var(--gray3)]">{d.date}</td>
+                    <td className="text-xs font-medium text-[var(--gray1)]">{fmt(total)}</td>
                     <td><StatusBadge status={d.status} /></td>
                   </tr>
                 );

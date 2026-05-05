@@ -8,29 +8,61 @@ import { Plus, Trash2, UserCheck } from "lucide-react";
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 const emptyItem = (): LineItem => ({ id: uid(), product: "", description: "", quantity: 1, price: 0 });
-type NoteRowType = "header" | "text";
-type NoteRow = { id: string; type: NoteRowType; value: string };
-const emptyNoteRow = (type: NoteRowType = "text"): NoteRow => ({ id: uid(), type, value: "" });
+type NoteLine = { id: string; value: string };
+type NoteGroup = { id: string; header: string; lines: NoteLine[] };
+const emptyNoteLine = (): NoteLine => ({ id: uid(), value: "" });
+const emptyNoteGroup = (): NoteGroup => ({ id: uid(), header: "", lines: [emptyNoteLine()] });
+type TimeSection = { id: string; section: string; entries: TimeEntry[] };
 
-function notesToRows(rawNotes: string): NoteRow[] {
-  const rows = rawNotes
+function notesToGroups(rawNotes: string): NoteGroup[] {
+  const lines = rawNotes
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean)
-    .map<NoteRow>((line) => line.startsWith("## ")
-      ? { id: uid(), type: "header", value: line.slice(3).trim() }
-      : { id: uid(), type: "text", value: line });
-  return rows.length > 0 ? rows : [emptyNoteRow("text")];
+    .filter(Boolean);
+  if (lines.length === 0) return [emptyNoteGroup()];
+
+  const groups: NoteGroup[] = [];
+  let currentGroup: NoteGroup | null = null;
+
+  for (const line of lines) {
+    if (line.startsWith("## ")) {
+      currentGroup = {
+        id: uid(),
+        header: line.slice(3).trim(),
+        lines: [emptyNoteLine()],
+      };
+      groups.push(currentGroup);
+      continue;
+    }
+
+    if (!currentGroup) {
+      currentGroup = emptyNoteGroup();
+      groups.push(currentGroup);
+    }
+    currentGroup.lines.push({ id: uid(), value: line });
+  }
+
+  return groups.map((group) => {
+    const meaningfulLines = group.lines.filter((entry) => entry.value.trim().length > 0);
+    return {
+      ...group,
+      lines: meaningfulLines.length > 0 ? meaningfulLines : [emptyNoteLine()],
+    };
+  });
 }
 
-function rowsToNotes(rows: NoteRow[]): string {
-  return rows
-    .map((row) => ({ ...row, value: row.value.trim() }))
-    .filter((row) => Boolean(row.value))
-    .map((row) => {
-      return row.type === "header" ? `## ${row.value}` : row.value;
-    })
-    .join("\n");
+function groupsToNotes(groups: NoteGroup[]): string {
+  const lines: string[] = [];
+  for (const group of groups) {
+    const header = group.header.trim();
+    const textLines = group.lines
+      .map((line) => line.value.trim())
+      .filter((line) => line.length > 0);
+    if (!header && textLines.length === 0) continue;
+    if (header) lines.push(`## ${header}`);
+    lines.push(...textLines);
+  }
+  return lines.join("\n");
 }
 
 function plusDays(dateString: string, days: number): string {
@@ -84,7 +116,7 @@ export default function Nieuw() {
   const [timeEntries, setTimeEntries]     = useState<TimeEntry[]>([]);
   const [timeHourlyRate, setTimeHourlyRate] = useState(company.defaultHourlyRate);
   const [btwRate, setBtwRate]             = useState(21);
-  const [noteRows, setNoteRows]           = useState<NoteRow[]>([emptyNoteRow("text")]);
+  const [noteGroups, setNoteGroups]       = useState<NoteGroup[]>([emptyNoteGroup()]);
   const [signaturesEnabled, setSignaturesEnabled] = useState(false);
   const [payerSignatureLabel, setPayerSignatureLabel] = useState("Handtekening klant");
 
@@ -123,7 +155,7 @@ export default function Nieuw() {
     setTimeEntries(existingDoc.timeEntries ?? []);
     setTimeHourlyRate(existingDoc.timeHourlyRate ?? company.defaultHourlyRate);
     setBtwRate(existingDoc.btwRate);
-    setNoteRows(notesToRows(existingDoc.notes ?? ""));
+    setNoteGroups(notesToGroups(existingDoc.notes ?? ""));
     setSignaturesEnabled(Boolean(existingDoc.signaturesEnabled));
     setPayerSignatureLabel(existingDoc.payerSignatureLabel ?? "Handtekening klant");
     setRecurring(existingDoc.recurring ?? "none");
@@ -162,21 +194,79 @@ export default function Nieuw() {
     setItems((p) => p.map((i) => (i.id === id ? { ...i, [field]: val } : i)));
   const addItem    = () => setItems((p) => [...p, emptyItem()]);
   const removeItem = (id: string) => setItems((p) => p.filter((i) => i.id !== id));
-  const addTimeEntry = () =>
-    setTimeEntries((prev) => [...prev, { id: uid(), service: "", hours: 0, section: "Backend" }]);
-  const addNoteRow = (type: NoteRowType) => setNoteRows((prev) => [...prev, emptyNoteRow(type)]);
-  const updateNoteRow = (id: string, value: string) => setNoteRows((prev) => prev.map((row) => row.id === id ? { ...row, value } : row));
-  const removeNoteRow = (id: string) => setNoteRows((prev) => {
-    const next = prev.filter((row) => row.id !== id);
-    return next.length > 0 ? next : [emptyNoteRow("text")];
+  const addTimeEntry = (section = "Nieuwe sectie") =>
+    setTimeEntries((prev) => [...prev, { id: uid(), service: "", hours: 0, section }]);
+  const addTimeSection = () => addTimeEntry("Nieuwe sectie");
+  const renameTimeSection = (fromSection: string, toSection: string) => setTimeEntries((prev) =>
+    prev.map((entry) => (entry.section === fromSection ? { ...entry, section: toSection } : entry)),
+  );
+  const removeTimeSection = (section: string) => setTimeEntries((prev) => prev.filter((entry) => entry.section !== section));
+  const addNoteGroup = () => setNoteGroups((prev) => [...prev, emptyNoteGroup()]);
+  const removeNoteGroup = (groupId: string) => setNoteGroups((prev) => {
+    const next = prev.filter((group) => group.id !== groupId);
+    return next.length > 0 ? next : [emptyNoteGroup()];
   });
+  const updateNoteGroupHeader = (groupId: string, header: string) => setNoteGroups((prev) =>
+    prev.map((group) => (group.id === groupId ? { ...group, header } : group)),
+  );
+  const addNoteLine = (groupId: string) => setNoteGroups((prev) =>
+    prev.map((group) => (group.id === groupId ? { ...group, lines: [...group.lines, emptyNoteLine()] } : group)),
+  );
+  const updateNoteLine = (groupId: string, lineId: string, value: string) => setNoteGroups((prev) =>
+    prev.map((group) => (group.id === groupId
+      ? { ...group, lines: group.lines.map((line) => (line.id === lineId ? { ...line, value } : line)) }
+      : group)),
+  );
+  const removeNoteLine = (groupId: string, lineId: string) => setNoteGroups((prev) =>
+    prev.map((group) => {
+      if (group.id !== groupId) return group;
+      const nextLines = group.lines.filter((line) => line.id !== lineId);
+      return { ...group, lines: nextLines.length > 0 ? nextLines : [emptyNoteLine()] };
+    }),
+  );
   const updateTimeEntry = (id: string, field: keyof TimeEntry, value: string | number) =>
     setTimeEntries((prev) => prev.map((t) => (t.id === id ? { ...t, [field]: value } : t)));
   const removeTimeEntry = (id: string) => setTimeEntries((prev) => prev.filter((t) => t.id !== id));
   const sub   = items.reduce((s, i) => s + (parseFloat(String(i.price)) || 0), 0);
   const tax   = parseFloat((sub * btwRate / 100).toFixed(2));
   const total = parseFloat((sub + tax).toFixed(2));
+  const totalTrackedHours = timeEntries.reduce((sum, entry) => sum + (Number(entry.hours) || 0), 0);
+  const totalTrackedAmount = totalTrackedHours * (Number(timeHourlyRate) || 0);
+  const filledNoteRows = noteGroups.reduce((sum, group) =>
+    sum + group.lines.filter((line) => line.value.trim().length > 0).length, 0);
+  const timeSections = timeEntries.reduce<TimeSection[]>((acc, entry) => {
+    const key = entry.section?.trim() || "Onbekend";
+    const current = acc.find((section) => section.section === key);
+    if (current) {
+      current.entries.push(entry);
+      return acc;
+    }
+    acc.push({ id: entry.id, section: key, entries: [entry] });
+    return acc;
+  }, []);
   const fmt   = (n: number) => `€ ${n.toFixed(2).replace(".", ",")}`;
+
+  const persistWorkspaceNow = async () => {
+    const state = useStore.getState();
+    const payload = state.getWorkspacePayload();
+    const settingsPayload = {
+      documents: payload.documents,
+      team: payload.team,
+      company: payload.company,
+      clientNotes: payload.clientNotes,
+      lineTemplates: payload.lineTemplates,
+      emailIntegration: payload.emailIntegration,
+    };
+    const response = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settingsPayload),
+    });
+    if (!response.ok) {
+      const details = await response.text().catch(() => "");
+      throw new Error(details || "Opslaan naar database mislukt.");
+    }
+  };
 
   const validate = (): boolean => {
     const errs: string[] = [];
@@ -194,10 +284,10 @@ export default function Nieuw() {
     return errs.length === 0;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate()) return;
     const trimmedDocumentId = documentId.trim();
-    const normalizedNotes = rowsToNotes(noteRows);
+    const normalizedNotes = groupsToNotes(noteGroups);
     try {
       if (isEditMode && existingDoc) {
         const currentId = existingDoc.id;
@@ -217,6 +307,7 @@ export default function Nieuw() {
           recurring: recurring === "none" ? null : recurring,
           recurringNextDate: recurring === "none" ? null : dueDate || date,
         });
+        await persistWorkspaceNow();
         showToast("Conceptdocument bijgewerkt.", "success");
         router.push(`/documenten/${trimmedDocumentId}`);
       } else {
@@ -229,19 +320,21 @@ export default function Nieuw() {
           reminderSent: false,
           reminderSentAt: null,
         });
+        await persistWorkspaceNow();
         showToast("Document succesvol aangemaakt.", "success");
         router.push(`/documenten/${trimmedDocumentId}`);
       }
-    } catch {
-      setErrors(["Er is een fout opgetreden bij het opslaan. Probeer het opnieuw."]);
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Er is een fout opgetreden bij het opslaan. Probeer het opnieuw.";
+      setErrors([message]);
       showToast("Opslaan mislukt. Controleer de velden.", "error");
     }
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div className="flex min-h-screen">
       <Sidebar />
-      <main className="app-main" style={{ background: "#f5f6fa" }}>
+      <main className="app-main bg-[var(--app-bg)]">
         <h1 style={{ fontSize: 24, fontWeight: 600, color: "var(--gray1)", marginBottom: 24 }}>
           {isEditMode ? `Concept bewerken (${existingDoc?.id})` : "Nieuw document"}
         </h1>
@@ -430,7 +523,7 @@ export default function Nieuw() {
                       value={((item.price || 0) * (item.quantity ?? 1)).toFixed(2)}
                       readOnly
                       aria-label="Regel totaal"
-                      style={{ background: "#f8fafc", color: "var(--gray2)" }}
+                      style={{ background: "var(--surface-soft)", color: "var(--gray2)" }}
                     />
                     <button onClick={() => removeItem(item.id)}
                       style={{ background: "none", border: "none", cursor: "pointer", color: "var(--gray4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -458,46 +551,65 @@ export default function Nieuw() {
                 </div>
                 <div>
                   <label style={lbl}>Notities (optioneel)</label>
+                  <p className="mb-2 text-xs text-[var(--gray4)]">
+                    Gebruik kopregels om je notities scanbaar te maken voor klanten.
+                  </p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {noteRows.map((row) => (
-                      <div key={row.id} style={{ display: "grid", gridTemplateColumns: "120px 1fr 32px", gap: 8, alignItems: "center" }}>
-                        <select
-                          value={row.type}
-                          onChange={(e) => {
-                            const type = e.target.value as NoteRowType;
-                            setNoteRows((prev) => prev.map((current) => current.id === row.id ? { ...current, type } : current));
-                          }}
-                        >
-                          <option value="text">Tekstregel</option>
-                          <option value="header">Kop</option>
-                        </select>
-                        <input
-                          placeholder={row.type === "header" ? "Bijv. Betalingsafspraken" : "Extra opmerking..."}
-                          value={row.value}
-                          onChange={(e) => updateNoteRow(row.id, e.target.value)}
-                        />
+                    {noteGroups.map((group) => (
+                      <div key={group.id} style={{ padding: 10, border: "1px solid var(--border-soft)", borderRadius: 10, background: "var(--surface-soft)" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 32px", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                          <input
+                            placeholder="Kopregel, bijv. Betalingsafspraken"
+                            value={group.header}
+                            onChange={(e) => updateNoteGroupHeader(group.id, e.target.value)}
+                          />
+                          <button
+                            onClick={() => removeNoteGroup(group.id)}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--gray4)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                            aria-label="Notitiegroep verwijderen"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {group.lines.map((line) => (
+                            <div key={line.id} style={{ display: "grid", gridTemplateColumns: "1fr 32px", gap: 8, alignItems: "center" }}>
+                              <input
+                                placeholder="Tekstregel..."
+                                value={line.value}
+                                onChange={(e) => updateNoteLine(group.id, line.id, e.target.value)}
+                              />
+                              <button
+                                onClick={() => removeNoteLine(group.id, line.id)}
+                                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--gray4)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                                aria-label="Tekstregel verwijderen"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                         <button
-                          onClick={() => removeNoteRow(row.id)}
-                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--gray4)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                          onClick={() => addNoteLine(group.id)}
+                          className="btn-outline"
+                          style={{ marginTop: 8, padding: "6px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
                         >
-                          <Trash2 size={14} />
+                          <Plus size={13} /> Tekstregel toevoegen
                         </button>
                       </div>
                     ))}
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button
-                        onClick={() => addNoteRow("text")}
-                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--primary-dark)", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}
+                        onClick={addNoteGroup}
+                        className="btn-outline"
+                        style={{ padding: "6px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
                       >
-                        <Plus size={13} /> Tekstregel
-                      </button>
-                      <button
-                        onClick={() => addNoteRow("header")}
-                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--primary-dark)", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}
-                      >
-                        <Plus size={13} /> Kopregel
+                        <Plus size={13} /> Kopregel toevoegen
                       </button>
                     </div>
+                    <p className="text-xs text-[var(--gray4)]">
+                      {noteGroups.length} kopregelgroep(en), {filledNoteRows} ingevulde tekstregel(s)
+                    </p>
                   </div>
                 </div>
               </div>
@@ -505,6 +617,9 @@ export default function Nieuw() {
 
             <div className="card">
               <p style={sec}>Urenregistratie per document (optioneel)</p>
+              <p className="mb-3 text-xs text-[var(--gray4)]">
+                Vul per regel in wat je hebt gedaan; dit maakt export en controle veel sneller.
+              </p>
               <div style={{ marginBottom: 10, maxWidth: 280 }}>
                 <label style={lbl}>Uurtarief voor deze factuur/offerte (€)</label>
                 <input
@@ -515,28 +630,62 @@ export default function Nieuw() {
                   placeholder="85"
                 />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 4fr 2fr 32px", gap: 8, marginBottom: 6 }}>
-                <span style={{ fontSize: 11, color: "var(--gray3)", fontWeight: 500 }}>Sectie</span>
-                <span style={{ fontSize: 11, color: "var(--gray3)", fontWeight: 500 }}>Service</span>
-                <span style={{ fontSize: 11, color: "var(--gray3)", fontWeight: 500 }}>Uren</span>
-                <span />
+              <div style={{ marginBottom: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <span className="rounded-full border border-[var(--border-soft)] bg-[var(--surface-soft)] px-3 py-1 text-xs text-[var(--gray2)]">
+                  Totaal uren: {totalTrackedHours.toFixed(2)}
+                </span>
+                <span className="rounded-full border border-[var(--border-soft)] bg-[var(--surface-soft)] px-3 py-1 text-xs text-[var(--gray2)]">
+                  Richtbedrag: {fmt(totalTrackedAmount)}
+                </span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {timeEntries.map((entry) => (
-                  <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "2fr 4fr 2fr 32px", gap: 8, alignItems: "center" }}>
-                    <input value={entry.section} onChange={(e) => updateTimeEntry(entry.id, "section", e.target.value)} placeholder="Backend / Frontend" />
-                    <input value={entry.service} onChange={(e) => updateTimeEntry(entry.id, "service", e.target.value)} placeholder="Feature development" />
-                    <input type="number" value={entry.hours || ""} onChange={(e) => updateTimeEntry(entry.id, "hours", parseFloat(e.target.value) || 0)} placeholder="0" />
-                    <button onClick={() => removeTimeEntry(entry.id)}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--gray4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Trash2 size={14} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {timeSections.map((sectionGroup) => (
+                  <div key={sectionGroup.id} style={{ border: "1px solid var(--border-soft)", borderRadius: 10, padding: 10, background: "var(--surface-soft)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 32px", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                      <input
+                        value={sectionGroup.section}
+                        onChange={(e) => renameTimeSection(sectionGroup.section, e.target.value)}
+                        placeholder="Sectienaam"
+                      />
+                      <button
+                        onClick={() => removeTimeSection(sectionGroup.section)}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--gray4)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        aria-label="Sectie verwijderen"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "5fr 2fr 32px", gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: "var(--gray3)", fontWeight: 500 }}>Service</span>
+                      <span style={{ fontSize: 11, color: "var(--gray3)", fontWeight: 500 }}>Uren</span>
+                      <span />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {sectionGroup.entries.map((entry) => (
+                        <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "5fr 2fr 32px", gap: 8, alignItems: "center" }}>
+                          <input value={entry.service} onChange={(e) => updateTimeEntry(entry.id, "service", e.target.value)} placeholder="Feature development" />
+                          <input type="number" value={entry.hours || ""} onChange={(e) => updateTimeEntry(entry.id, "hours", parseFloat(e.target.value) || 0)} placeholder="0" />
+                          <button onClick={() => removeTimeEntry(entry.id)}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--gray4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => addTimeEntry(sectionGroup.section)}
+                      className="btn-outline"
+                      style={{ marginTop: 8, padding: "6px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <Plus size={13} /> Urenregel toevoegen
                     </button>
                   </div>
                 ))}
               </div>
-              <button onClick={addTimeEntry}
-                style={{ marginTop: 12, background: "none", border: "none", cursor: "pointer", color: "var(--primary-dark)", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-                <Plus size={13} /> Urenregel toevoegen
+              <button onClick={addTimeSection}
+                className="btn-outline"
+                style={{ marginTop: 12, padding: "6px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                <Plus size={13} /> Sectie toevoegen
               </button>
               <p style={{ fontSize: 12, color: "var(--gray4)", marginTop: 8 }}>
                 Dit uurtarief wordt alleen gebruikt voor de uren-breakdown PDF/Excel en niet op de factuur-PDF zelf.
@@ -557,12 +706,12 @@ export default function Nieuw() {
                   <span style={{ color: "var(--gray3)" }}>BTW ({btwRate}%)</span>
                   <span style={{ color: "var(--gray2)" }}>{fmt(tax)}</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, paddingTop: 8, borderTop: "1px solid #f0f0f0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, paddingTop: 8, borderTop: "1px solid var(--border-soft)" }}>
                   <span style={{ color: "var(--gray1)" }}>Totaal incl. BTW</span>
                   <span style={{ color: "var(--gray1)" }}>{fmt(total)}</span>
                 </div>
               </div>
-              <button className="btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={handleSubmit}>
+              <button className="btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={() => void handleSubmit()}>
                 {isEditMode ? "Wijzigingen opslaan" : "Document aanmaken"}
               </button>
               <button className="btn-outline" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={() => router.back()}>

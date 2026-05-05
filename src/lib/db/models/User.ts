@@ -8,6 +8,7 @@ const userSchema = new Schema(
     invoiceName: { type: String, default: "" },
     invoiceEmail: { type: String, default: "" },
     invoicePhone: { type: String, default: "" },
+    themePreference: { type: String, enum: ["light", "dark", "system"], default: "system" },
     role: { type: String, enum: ["user", "admin"], default: "user" },
     inviteTokenHash: { type: String, default: "" },
     inviteTokenExpiresAt: { type: Date, default: null },

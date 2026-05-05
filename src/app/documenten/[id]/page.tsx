@@ -81,30 +81,33 @@ export default function DocDetail() {
     <div className="flex min-h-screen">
       <Sidebar />
       <main className="app-main">
-        <div className="flex items-center gap-4 mb-6">
-          <button onClick={() => router.back()} className="btn-outline flex items-center gap-2">
+        <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center">
+          <button onClick={() => router.back()} className="btn-outline inline-flex items-center gap-2 self-start">
             <ArrowLeft size={14} /> Terug
           </button>
-          <h1 className="text-xl font-semibold flex-1" style={{ color: "var(--gray1)" }}>{doc.id}</h1>
-          <select value={doc.status} onChange={(e) => updateDocument(doc.id, { status: e.target.value as DocStatus })}
-            style={{ width: 160 }}>
+          <h1 className="flex-1 text-xl font-semibold text-[var(--gray1)]">{doc.id}</h1>
+          <select
+            className="w-full lg:w-40"
+            value={doc.status}
+            onChange={(e) => updateDocument(doc.id, { status: e.target.value as DocStatus })}
+          >
             {STATUSES.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
           </select>
-          <button className="btn-primary flex items-center gap-2" onClick={() => generatePdf(doc, company, team.find((m) => m.name === doc.contact)?.signature)}>
+          <button className="btn-primary inline-flex w-full items-center gap-2 lg:w-auto" onClick={() => generatePdf(doc, company, team.find((m) => m.name === doc.contact)?.signature)}>
             <Download size={14} /> PDF downloaden
           </button>
           {(doc.type === "factuur" || doc.type === "offerte") && linkedTimeEntries.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-col gap-2 lg:w-auto lg:flex-row lg:items-center">
               <select
+                className="w-full lg:w-[140px]"
                 value={timeExportFormat}
                 onChange={(e) => setTimeExportFormat(e.target.value as "pdf" | "csv")}
-                style={{ width: 140 }}
               >
                 <option value="pdf">PDF</option>
                 <option value="csv">CSV (.csv)</option>
               </select>
               <button
-                className="btn-outline flex items-center gap-2"
+                className="btn-outline inline-flex w-full items-center gap-2 lg:w-auto"
                 onClick={() => {
                   if (timeExportFormat === "pdf") {
                     generateTimeRegistrationPdf(doc, company, linkedTimeEntries, doc.timeHourlyRate);
@@ -117,10 +120,10 @@ export default function DocDetail() {
               </button>
             </div>
           )}
-          {canEdit && <button className="btn-outline" onClick={() => router.push(`/nieuw?edit=${doc.id}`)}>Bewerk concept</button>}
+          {canEdit && <button className="btn-outline w-full lg:w-auto" onClick={() => router.push(`/nieuw?edit=${doc.id}`)}>Bewerk concept</button>}
           {(
             <button
-              className="btn-outline flex items-center gap-2"
+              className="btn-outline inline-flex w-full items-center gap-2 lg:w-auto"
               onClick={() => {
                 const firstWithEmail = suggestedClients.find((client) => client.email) ?? defaultClient;
                 setSelectedClientId(firstWithEmail?.id ?? "");
@@ -133,11 +136,11 @@ export default function DocDetail() {
             </button>
           )}
           {doc.type === "offerte" && (
-            <button className="btn-outline flex items-center gap-2" onClick={handleConvert}>
+            <button className="btn-outline inline-flex w-full items-center gap-2 lg:w-auto" onClick={handleConvert}>
               <Repeat size={14} /> Zet om naar factuur
             </button>
           )}
-          <button onClick={() => setDeleteOpen(true)} className="btn-danger flex items-center gap-2">
+          <button onClick={() => setDeleteOpen(true)} className="btn-danger inline-flex w-full items-center gap-2 lg:w-auto">
             <Trash2 size={14} /> Verwijderen
           </button>
         </div>
@@ -154,7 +157,7 @@ export default function DocDetail() {
           title="Document per e-mail versturen"
           message={
             <div style={{ marginTop: 10 }}>
-              <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, border: "1px solid #e5e7eb", background: "#f8fafc" }}>
+              <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, border: "1px solid var(--border-soft)", background: "var(--surface-soft)" }}>
                 <p style={{ fontSize: 12, color: "var(--gray3)", marginBottom: 4 }}>Standaard ontvanger (gekoppelde klant)</p>
                 <p style={{ fontSize: 14, color: "var(--gray1)", fontWeight: 600 }}>
                   {defaultRecipient || "Geen e-mailadres gevonden voor deze klant"}
@@ -299,15 +302,15 @@ export default function DocDetail() {
           </div>
         )}
 
-        <div className="card max-w-5xl mx-auto p-2">
+        <div className="mx-auto w-full max-w-5xl card p-2">
           {previewUrl ? (
             <iframe
               title={`PDF preview ${doc.id}`}
               src={previewUrl}
-              style={{ width: "100%", height: "1100px", border: "none", borderRadius: 8, background: "white" }}
+              className="h-[72vh] w-full rounded-lg border-0 bg-[var(--surface)] md:h-[1100px]"
             />
           ) : (
-            <p className="text-sm p-4" style={{ color: "var(--gray4)" }}>PDF preview wordt opgebouwd...</p>
+            <p className="p-4 text-sm text-[var(--gray4)]">PDF preview wordt opgebouwd...</p>
           )}
         </div>
       </main>

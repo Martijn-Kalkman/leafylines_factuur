@@ -52,22 +52,14 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-6">
-      <form className="card w-full max-w-md space-y-3" onSubmit={onSubmit}>
-        <h1 className="text-xl font-semibold">Inloggen</h1>
+    <main className="flex min-h-screen items-center justify-center p-6">
+      <form className="card w-full max-w-md space-y-4" onSubmit={onSubmit}>
+        <h1 className="text-xl font-semibold tracking-tight">Inloggen</h1>
         {error && (
           <div
             role="alert"
             aria-live="assertive"
-            style={{
-              background: "#fff1f1",
-              border: "1px solid #f5b7b7",
-              color: "#8a1f1f",
-              borderRadius: 8,
-              padding: "10px 12px",
-              fontSize: 13,
-              fontWeight: 500,
-            }}
+            className="app-alert-error"
           >
             {error}
           </div>

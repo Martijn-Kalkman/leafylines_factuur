@@ -23,6 +23,7 @@ export async function GET() {
     role: dbUser.role || "user",
     invoiceEmail: dbUser.invoiceEmail || dbUser.email || "",
     invoicePhone: dbUser.invoicePhone || "",
+    themePreference: dbUser.themePreference || "system",
   });
 }
 
@@ -43,6 +44,7 @@ export async function PUT(request: Request) {
   }
   if (typeof body.invoiceEmail === "string") updates.invoiceEmail = body.invoiceEmail.trim().toLowerCase();
   if (typeof body.invoicePhone === "string") updates.invoicePhone = body.invoicePhone.trim();
+  if (typeof body.themePreference === "string") updates.themePreference = body.themePreference;
   if (typeof body.password === "string") {
     updates.passwordHash = await bcrypt.hash(body.password, 12);
   }

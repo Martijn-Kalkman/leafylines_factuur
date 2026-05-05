@@ -26,11 +26,11 @@ export default function ConfirmModal({
   if (!open) return null;
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 2200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div className="card" style={{ width: "100%", maxWidth: 460 }}>
-        <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--gray1)", marginBottom: 8 }}>{title}</h3>
-        <div style={{ fontSize: 14, color: "var(--gray3)", marginBottom: 18 }}>{message}</div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+    <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/35 p-4">
+      <div className="card w-full max-w-[460px]" role="dialog" aria-modal="true" aria-label={title}>
+        <h3 className="mb-2 text-lg font-semibold text-[var(--gray1)]">{title}</h3>
+        <div className="mb-[18px] text-sm text-[var(--gray3)]">{message}</div>
+        <div className="flex justify-end gap-2">
           <button className="btn-outline" onClick={onCancel}>{cancelLabel}</button>
           <button
             className={confirmVariant === "danger" ? "btn-danger" : "btn-primary"}

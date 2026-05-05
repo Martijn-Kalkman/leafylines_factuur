@@ -18,88 +18,104 @@ export default function Sidebar() {
   const [role, setRole] = useState<"user" | "admin" | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   useEffect(() => {
+    const cachedRole = window.sessionStorage.getItem("leafylines:user-role");
+    if (cachedRole === "admin" || cachedRole === "user") {
+      setRole(cachedRole);
+    }
+
     const loadSession = async () => {
       const response = await fetch("/api/auth/session", { cache: "no-store" });
       if (!response.ok) return;
       const data = (await response.json()) as { authenticated?: boolean; user?: { role?: "user" | "admin" } };
-      if (data.authenticated && data.user?.role) setRole(data.user.role);
+      if (data.authenticated && data.user?.role) {
+        setRole(data.user.role);
+        window.sessionStorage.setItem("leafylines:user-role", data.user.role);
+      }
     };
     void loadSession();
   }, []);
   useEffect(() => {
     setMobileOpen(false);
   }, [path]);
-  const isActive = (href: string) =>
-    path === href || path.startsWith(href + "/");
+  const isExactActive = (href: string) => path === href;
+  const isSectionActive = (href: string) => path === href || path.startsWith(`${href}/`);
 
   const navContent = (
     <>
-      <nav style={{ flex: 1, padding: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+      <nav className="flex flex-1 flex-col gap-1 p-3">
         {nav.map(({ href, icon: Icon, label }) => {
-          const active = isActive(href);
+          const active = isSectionActive(href);
           return (
-            <Link key={href} href={href} style={{
-              display: "flex", alignItems: "center", gap: 12,
-              padding: "9px 12px", borderRadius: 8, fontSize: 14, fontWeight: 500,
-              textDecoration: "none", transition: "all 0.15s",
-              background: active ? "var(--primary)" : "transparent",
-              color: active ? "#1a6b61" : "var(--gray2)",
-            }}>
+            <Link
+              key={href}
+              href={href}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${
+                active
+                  ? "bg-[var(--primary)] text-[var(--primary-ink)]"
+                  : "text-[var(--gray2)] hover:bg-[var(--surface-muted)]"
+              }`}
+            >
               <Icon size={16} />{label}
             </Link>
           );
         })}
-        <Link href="/profile" style={{
-          display: "flex", alignItems: "center", gap: 12,
-          padding: "9px 12px", borderRadius: 8, fontSize: 14, fontWeight: 500,
-          textDecoration: "none", transition: "all 0.15s",
-          background: isActive("/profile") ? "var(--primary)" : "transparent",
-          color: isActive("/profile") ? "#1a6b61" : "var(--gray2)",
-        }}>
+        <Link
+          href="/profile"
+          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${
+            isSectionActive("/profile")
+              ? "bg-[var(--primary)] text-[var(--primary-ink)]"
+              : "text-[var(--gray2)] hover:bg-[var(--surface-muted)]"
+          }`}
+        >
           <Users size={16} />Profiel
         </Link>
         {role === "admin" && (
           <>
-            <p style={{ fontSize: 11, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--gray4)", margin: "10px 12px 4px" }}>
+            <p className="mb-1 mt-3 px-3 text-[11px] uppercase tracking-wider text-[var(--gray4)]">
               Admin
             </p>
-            <Link href="/users" style={{
-              display: "flex", alignItems: "center", gap: 12,
-              padding: "9px 12px", borderRadius: 8, fontSize: 14, fontWeight: 500,
-              textDecoration: "none", transition: "all 0.15s",
-              background: isActive("/users") ? "var(--primary)" : "transparent",
-              color: isActive("/users") ? "#1a6b61" : "var(--gray2)",
-            }}>
+            <Link
+              href="/users"
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${
+                isExactActive("/users")
+                  ? "bg-[var(--primary)] text-[var(--primary-ink)]"
+                  : "text-[var(--gray2)] hover:bg-[var(--surface-muted)]"
+              }`}
+            >
               <ShieldCheck size={16} />Users
             </Link>
-            <Link href="/users/register" style={{
-              display: "flex", alignItems: "center", gap: 12,
-              padding: "9px 12px", borderRadius: 8, fontSize: 14, fontWeight: 500,
-              textDecoration: "none", transition: "all 0.15s",
-              background: isActive("/users/register") ? "var(--primary)" : "transparent",
-              color: isActive("/users/register") ? "#1a6b61" : "var(--gray2)",
-            }}>
+            <Link
+              href="/users/register"
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${
+                isSectionActive("/users/register")
+                  ? "bg-[var(--primary)] text-[var(--primary-ink)]"
+                  : "text-[var(--gray2)] hover:bg-[var(--surface-muted)]"
+              }`}
+            >
               <UserPlus size={16} />Register
             </Link>
           </>
         )}
       </nav>
 
-      <div style={{ padding: 12, borderTop: "1px solid #f0f0f0" }}>
-        <Link href="/instellingen" style={{
-          display: "flex", alignItems: "center", gap: 12, padding: "9px 12px",
-          borderRadius: 8, fontSize: 14, fontWeight: 500, textDecoration: "none",
-          transition: "all 0.15s",
-          background: isActive("/instellingen") ? "var(--primary)" : "transparent",
-          color: isActive("/instellingen") ? "#1a6b61" : "var(--gray3)",
-        }}>
+      <div className="border-t border-[var(--border-soft)] p-3">
+        <Link
+          href="/instellingen"
+          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${
+            isSectionActive("/instellingen")
+              ? "bg-[var(--primary)] text-[var(--primary-ink)]"
+              : "text-[var(--gray3)] hover:bg-[var(--surface-muted)]"
+          }`}
+        >
           <Settings size={16} />Instellingen
         </Link>
         <button
           className="btn-outline"
-          style={{ width: "100%", justifyContent: "center", marginTop: 8 }}
+          type="button"
+          style={{ width: "100%", marginTop: 8 }}
           onClick={async () => {
             await fetch("/api/auth/logout", { method: "POST" });
+            window.sessionStorage.removeItem("leafylines:user-role");
             window.location.href = "/login";
           }}
         >
@@ -112,8 +128,8 @@ export default function Sidebar() {
   return (
     <>
       <header className="mobile-topbar">
-        <Image src="/leaf.png" alt="LeafyLines" width={120} height={50} style={{ objectFit: "contain", width: "auto", height: 38 }} priority />
-        <button className="btn-outline" style={{ padding: 8 }} onClick={() => setMobileOpen((value) => !value)} aria-label="Menu openen">
+        <Image src="/leaf.png" alt="LeafyLines" width={120} height={50} className="h-[38px] w-auto object-contain" priority />
+        <button className="btn-outline !p-2" onClick={() => setMobileOpen((value) => !value)} aria-label="Menu openen">
           {mobileOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
       </header>
@@ -121,22 +137,18 @@ export default function Sidebar() {
       {mobileOpen && (
         <div className="mobile-sidebar-backdrop" onClick={() => setMobileOpen(false)}>
           <aside className="mobile-sidebar" onClick={(event) => event.stopPropagation()}>
-            <div style={{ padding: "16px 14px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "center" }}>
-              <Image src="/leaf.png" alt="LeafyLines" width={130} height={56} style={{ objectFit: "contain", width: "auto", height: 44 }} priority />
+            <div className="flex justify-center border-b border-[var(--border-soft)] px-3.5 py-4">
+              <Image src="/leaf.png" alt="LeafyLines" width={130} height={56} className="h-11 w-auto object-contain" priority />
             </div>
             {navContent}
           </aside>
         </div>
       )}
 
-      <aside className="desktop-sidebar" style={{
-        position: "fixed", top: 0, left: 0, height: "100vh", width: 220,
-        background: "white", borderRight: "1px solid #f0f0f0",
-        flexDirection: "column", zIndex: 10,
-      }}>
-        <div style={{ padding: "20px 16px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "center" }}>
+      <aside className="desktop-sidebar fixed left-0 top-0 z-10 h-screen w-[220px] flex-col border-r border-[var(--border-soft)] bg-[var(--surface)]">
+        <div className="flex justify-center border-b border-[var(--border-soft)] px-4 pb-4 pt-5">
           <Image src="/leaf.png" alt="LeafyLines" width={140} height={70}
-            style={{ objectFit: "contain", width: "auto", height: 56 }} priority />
+            className="h-14 w-auto object-contain" priority />
         </div>
         {navContent}
       </aside>

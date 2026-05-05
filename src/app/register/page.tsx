@@ -69,24 +69,16 @@ function RegisterForm() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-6">
-      <form className="card w-full max-w-md space-y-3" onSubmit={onSubmit}>
-        <h1 className="text-xl font-semibold">Account activeren</h1>
-        <p className="text-sm" style={{ color: "var(--gray3)" }}>
+    <main className="flex min-h-screen items-center justify-center p-6">
+      <form className="card w-full max-w-md space-y-4" onSubmit={onSubmit}>
+        <h1 className="text-xl font-semibold tracking-tight">Account activeren</h1>
+        <p className="text-sm text-[var(--gray3)]">
           Stel je eigen wachtwoord in. Vereist: minimaal 16 tekens, hoofdletter, kleine letter, cijfer en speciaal teken.
         </p>
         {status && (
           <div
             role="status"
-            style={{
-              background: "#ecfdf3",
-              border: "1px solid #9be2b6",
-              color: "#116734",
-              borderRadius: 8,
-              padding: "10px 12px",
-              fontSize: 13,
-              fontWeight: 500,
-            }}
+            className="app-alert-success"
           >
             {status}
           </div>
@@ -95,15 +87,7 @@ function RegisterForm() {
           <div
             role="alert"
             aria-live="assertive"
-            style={{
-              background: "#fff1f1",
-              border: "1px solid #f5b7b7",
-              color: "#8a1f1f",
-              borderRadius: 8,
-              padding: "10px 12px",
-              fontSize: 13,
-              fontWeight: 500,
-            }}
+            className="app-alert-error"
           >
             {error}
           </div>
