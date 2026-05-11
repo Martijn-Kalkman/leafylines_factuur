@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Sidebar from "@/components/Sidebar";
 import { useToast } from "@/components/ToastProvider";
 import { useStore, EmailTemplatePreset } from "@/store/useStore";
@@ -32,7 +32,18 @@ const sub: React.CSSProperties = { fontSize: 13, color: "var(--gray3)", marginBo
 type AppUserOption = { id: string; email: string; name: string };
 
 export default function Instellingen() {
-  const { company, updateCompany, lineTemplates, addLineTemplate, updateLineTemplate, deleteLineTemplate, documents, emailIntegration, updateEmailIntegration } = useStore();
+  const {
+    company,
+    updateCompany,
+    lineTemplates,
+    addLineTemplate,
+    updateLineTemplate,
+    deleteLineTemplate,
+    emailIntegration,
+    updateEmailIntegration,
+    getWorkspacePayload,
+    hydrateWorkspace,
+  } = useStore();
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
 
@@ -85,6 +96,7 @@ export default function Instellingen() {
   const [userOptions, setUserOptions] = useState<AppUserOption[]>([]);
   const [newTemplateName, setNewTemplateName] = useState("");
   const [createTemplateModalOpen, setCreateTemplateModalOpen] = useState(false);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (!hydrated) return;
     setEmailTemplates({
@@ -113,6 +125,68 @@ export default function Instellingen() {
       body: JSON.stringify(patch),
     });
     return response.ok;
+  };
+
+  const persistWorkspaceImport = async (payload: ReturnType<typeof getWorkspacePayload>): Promise<boolean> => {
+    const [settingsResponse, clientsResponse] = await Promise.all([
+      fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documents: payload.documents,
+          team: payload.team,
+          company: payload.company,
+          clientNotes: payload.clientNotes,
+          lineTemplates: payload.lineTemplates,
+          emailIntegration: payload.emailIntegration,
+        }),
+      }),
+      fetch("/api/klanten", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clients: payload.clients }),
+      }),
+    ]);
+    return settingsResponse.ok && clientsResponse.ok;
+  };
+
+  const exportWorkspaceJson = () => {
+    const payload = getWorkspacePayload();
+    const exportPayload = {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      app: "leafylines_factuur",
+      workspace: payload,
+    };
+    const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `leafylines-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    showToast("Back-up geëxporteerd als JSON.", "success");
+  };
+
+  const importWorkspaceJson = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as { workspace?: ReturnType<typeof getWorkspacePayload> };
+      const incoming = parsed?.workspace;
+      if (!incoming || typeof incoming !== "object") {
+        showToast("Ongeldige back-up: 'workspace' ontbreekt.", "error");
+        return;
+      }
+      hydrateWorkspace(incoming);
+      const persisted = await persistWorkspaceImport(incoming);
+      if (!persisted) {
+        showToast("Import lokaal voltooid, maar opslaan naar database mislukte.", "error");
+        return;
+      }
+      showToast("Import voltooid en opgeslagen in database.", "success");
+    } catch {
+      showToast("Import mislukt: controleer of het JSON-bestand geldig is.", "error");
+    }
   };
 
   return (
@@ -449,6 +523,29 @@ export default function Instellingen() {
           >
             Geselecteerde preset verwijderen
           </button>
+        </div>
+        <div className="card" style={{ marginTop: 24 }}>
+          <p style={sec}>Back-up (JSON)</p>
+          <p style={sub}>Exporteer of importeer je volledige workspace (documenten, klanten, team, notities, templates en e-mailinstellingen).</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="btn-outline" onClick={exportWorkspaceJson}>
+              Exporteer alles (JSON)
+            </button>
+            <button className="btn-primary" onClick={() => importInputRef.current?.click()}>
+              Importeer alles (JSON)
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void importWorkspaceJson(file);
+                event.currentTarget.value = "";
+              }}
+            />
+          </div>
         </div>
         <div className="card" style={{ marginTop: 24 }}>
           <p style={sec}>Snelle regelsjablonen</p>

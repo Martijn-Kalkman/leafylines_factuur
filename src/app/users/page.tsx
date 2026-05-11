@@ -13,6 +13,17 @@ interface UserRow {
   createdAt: string;
 }
 
+async function requestUserDeletion(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const response = await fetch("/api/users", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  if (response.ok) return { ok: true };
+  const data = (await response.json().catch(() => ({}))) as { error?: string };
+  return { ok: false, error: data.error || "Gebruiker verwijderen mislukt." };
+}
+
 export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -108,14 +119,9 @@ export default function UsersPage() {
     setStatusMessage("");
     setDeletingUserId(id);
     try {
-      const response = await fetch("/api/users", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      if (!response.ok) {
-        const data = (await response.json().catch(() => ({}))) as { error?: string };
-        setErrorMessage(data.error || "Gebruiker verwijderen mislukt.");
+      const deletionResult = await requestUserDeletion(id);
+      if (!deletionResult.ok) {
+        setErrorMessage(deletionResult.error);
         return;
       }
       setUsers((prev) => prev.filter((user) => user.id !== id));

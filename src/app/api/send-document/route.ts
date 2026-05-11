@@ -19,6 +19,7 @@ interface SendPayload {
   subject: string;
   text: string;
   html?: string;
+  source?: "manual" | "automatic";
   sendConfirmation?: boolean;
   confirmationText?: string;
   confirmationHtml?: string;
@@ -29,6 +30,10 @@ interface SendPayload {
 
 function isEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function normalizeEmail(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
 }
 
 export async function POST(request: Request) {
@@ -53,19 +58,21 @@ export async function POST(request: Request) {
     await connectToDatabase();
     const settings = await SettingModel.findOne({ key: "global" }).lean();
     const dbConfirmationRecipients = (settings?.emailIntegration?.confirmationEmails ?? [])
-      .map((email: unknown) => String(email || "").trim())
+      .map((email: unknown) => normalizeEmail(email))
       .filter((email: string) => isEmail(email));
     const envConfirmationRecipients = (process.env.EMAIL_CONFIRMATION_TO || "")
       .split(",")
-      .map((email) => email.trim())
+      .map((email) => normalizeEmail(email))
       .filter((email) => isEmail(email));
     const confirmationRecipients = Array.from(new Set([...dbConfirmationRecipients, ...envConfirmationRecipients]));
+    const source = body.source === "automatic" ? "automatic" : "manual";
     const addServerEmailLogs = async (entries: Array<{ subject: string; to: string; kind: "document" | "confirmation"; status: "success" | "failed"; error?: string }>) => {
       if (entries.length === 0) return;
       const nowIso = new Date().toISOString();
       await EmailLogModel.insertMany(
         entries.map((entry) => ({
           ...entry,
+          source,
           error: entry.error || "",
           createdAt: nowIso,
           sentAt: nowIso,
@@ -180,26 +187,54 @@ export async function POST(request: Request) {
       if (!response.ok) throw new Error(`SendGrid failed: ${await response.text()}`);
     };
 
-    await sendMailByProvider(body.to, body.subject, body.text, body.html, true);
     const logs: Array<{ subject: string; to: string; kind: "document" | "confirmation"; status: "success" | "failed"; error?: string }> = [
       { subject: body.subject, to: body.to, kind: "document", status: "success" },
     ];
+    try {
+      await sendMailByProvider(body.to, body.subject, body.text, body.html, true);
+    } catch (sendError) {
+      logs[0] = {
+        subject: body.subject,
+        to: body.to,
+        kind: "document",
+        status: "failed",
+        error: sendError instanceof Error ? sendError.message : "Document email send failed.",
+      };
+      await addServerEmailLogs(logs);
+      throw sendError;
+    }
+
     if (body.sendConfirmation === true && confirmationRecipients.length > 0) {
-      await sendMailByProvider(
-        confirmationRecipients,
-        `Bevestiging: ${body.subject}`,
-        body.confirmationText || `Document met onderwerp "${body.subject}" is verzonden naar ${body.to}.`,
-        body.confirmationHtml,
-        false,
-      );
-      for (const confirmationTo of confirmationRecipients) {
-        logs.push({ subject: `Bevestiging: ${body.subject}`, to: confirmationTo, kind: "confirmation", status: "success" });
+      try {
+        await sendMailByProvider(
+          confirmationRecipients,
+          `Bevestiging: ${body.subject}`,
+          body.confirmationText || `Document met onderwerp "${body.subject}" is verzonden naar ${body.to}.`,
+          body.confirmationHtml,
+          true,
+        );
+        for (const confirmationTo of confirmationRecipients) {
+          logs.push({ subject: `Bevestiging: ${body.subject}`, to: confirmationTo, kind: "confirmation", status: "success" });
+        }
+      } catch (confirmationError) {
+        for (const confirmationTo of confirmationRecipients) {
+          logs.push({
+            subject: `Bevestiging: ${body.subject}`,
+            to: confirmationTo,
+            kind: "confirmation",
+            status: "failed",
+            error: confirmationError instanceof Error ? confirmationError.message : "Confirmation email send failed.",
+          });
+        }
+        await addServerEmailLogs(logs);
+        throw confirmationError;
       }
     }
     await addServerEmailLogs(logs);
     await appendAuditLog(user.id, "email.send", {
       to: body.to,
       subject: body.subject,
+      source,
       confirmationRecipients: body.sendConfirmation === true ? confirmationRecipients : [],
     });
     return NextResponse.json({ ok: true });

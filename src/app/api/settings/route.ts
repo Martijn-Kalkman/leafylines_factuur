@@ -16,14 +16,21 @@ export async function GET() {
 
   await connectToDatabase();
   const settings = await SettingModel.findOne({ key: "global" }).lean();
+  const emailIntegration = settings?.emailIntegration ?? {};
+  const sanitizedEmailIntegration = user.role === "admin"
+    ? emailIntegration
+    : {
+        ...emailIntegration,
+        apiKey: "",
+      };
 
   return NextResponse.json({
-    documents: settings.documents ?? [],
-    team: settings.team ?? [],
-    company: settings.company ?? {},
-    clientNotes: settings.clientNotes ?? [],
-    lineTemplates: settings.lineTemplates ?? [],
-    emailIntegration: settings.emailIntegration ?? {},
+    documents: settings?.documents ?? [],
+    team: settings?.team ?? [],
+    company: settings?.company ?? {},
+    clientNotes: settings?.clientNotes ?? [],
+    lineTemplates: settings?.lineTemplates ?? [],
+    emailIntegration: sanitizedEmailIntegration,
   });
 }
 
@@ -39,17 +46,36 @@ export async function PUT(request: Request) {
 
   const parsedPayload = settingsPayloadSchema.safeParse(await request.json());
   if (!parsedPayload.success) {
-    return NextResponse.json({ error: "Invalid settings payload." }, { status: 400 });
+    const firstIssue = parsedPayload.error.issues[0];
+    return NextResponse.json(
+      {
+        error: "Invalid settings payload.",
+        detail: firstIssue
+          ? `${firstIssue.path.join(".") || "payload"}: ${firstIssue.message}`
+          : "Schema validation failed.",
+      },
+      { status: 400 },
+    );
   }
   const payload = parsedPayload.data;
   const payloadSize = JSON.stringify(payload).length;
-  if (payloadSize > 2_000_000) {
+  if (payloadSize > 8_000_000) {
     return NextResponse.json({ error: "Settings payload too large." }, { status: 413 });
   }
 
   try {
     await connectToDatabase();
     const existing = await SettingModel.findOne({ key: "global" }).lean();
+    const emailIntegrationPayload = payload.emailIntegration;
+    const mergedEmailIntegration = emailIntegrationPayload
+      ? {
+          ...(existing?.emailIntegration ?? defaultSettingsData.emailIntegration),
+          ...emailIntegrationPayload,
+          ...(user.role === "admin"
+            ? {}
+            : { apiKey: (existing?.emailIntegration?.apiKey ?? defaultSettingsData.emailIntegration.apiKey) }),
+        }
+      : existing?.emailIntegration ?? defaultSettingsData.emailIntegration;
     const merged = {
       key: "global",
       documents: payload.documents ?? existing?.documents ?? defaultSettingsData.documents,
@@ -57,7 +83,7 @@ export async function PUT(request: Request) {
       company: payload.company ?? existing?.company ?? defaultSettingsData.company,
       clientNotes: payload.clientNotes ?? existing?.clientNotes ?? defaultSettingsData.clientNotes,
       lineTemplates: payload.lineTemplates ?? existing?.lineTemplates ?? defaultSettingsData.lineTemplates,
-      emailIntegration: payload.emailIntegration ?? existing?.emailIntegration ?? defaultSettingsData.emailIntegration,
+      emailIntegration: mergedEmailIntegration,
     };
     const persisted = await SettingModel.findOneAndUpdate(
       { key: "global" },

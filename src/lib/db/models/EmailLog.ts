@@ -7,6 +7,7 @@ const emailLogSchema = new Schema(
     subject: { type: String, required: true },
     to: { type: String, required: true },
     kind: { type: String, enum: ["document", "confirmation"], required: true },
+    source: { type: String, enum: ["manual", "automatic"], default: "manual" },
     status: { type: String, enum: ["success", "failed"], required: true },
     error: { type: String, default: "" },
     sentBy: { type: String, default: "" },

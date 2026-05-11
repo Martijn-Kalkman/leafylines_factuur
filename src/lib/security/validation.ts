@@ -1,21 +1,23 @@
 import { z } from "zod";
 
+const strongPasswordSchema = z
+  .string()
+  .min(16, "Wachtwoord moet minimaal 16 tekens bevatten.")
+  .max(128)
+  .refine((value) => /[a-z]/.test(value), "Wachtwoord moet een kleine letter bevatten.")
+  .refine((value) => /[A-Z]/.test(value), "Wachtwoord moet een hoofdletter bevatten.")
+  .refine((value) => /\d/.test(value), "Wachtwoord moet een cijfer bevatten.")
+  .refine((value) => /[^A-Za-z0-9]/.test(value), "Wachtwoord moet een speciaal teken bevatten.");
+
 export const registerSchema = z.object({
   token: z.string().min(20).max(256),
   name: z.string().max(120).optional().default(""),
-  password: z
-    .string()
-    .min(16, "Wachtwoord moet minimaal 16 tekens bevatten.")
-    .max(128)
-    .refine((value) => /[a-z]/.test(value), "Wachtwoord moet een kleine letter bevatten.")
-    .refine((value) => /[A-Z]/.test(value), "Wachtwoord moet een hoofdletter bevatten.")
-    .refine((value) => /\d/.test(value), "Wachtwoord moet een cijfer bevatten.")
-    .refine((value) => /[^A-Za-z0-9]/.test(value), "Wachtwoord moet een speciaal teken bevatten."),
+  password: strongPasswordSchema,
 }).strict();
 
 export const profileUpdateSchema = z.object({
   name: z.string().max(120).optional(),
-  password: z.string().min(8).max(128).optional(),
+  password: strongPasswordSchema.optional(),
   invoiceName: z.string().max(120).optional(),
   invoiceEmail: z.string().email().max(200).optional().or(z.literal("")),
   invoicePhone: z.string().max(40).optional(),
@@ -42,6 +44,7 @@ export const sendDocumentSchema = z.object({
   subject: z.string().min(1).max(200),
   text: z.string().min(1).max(20000),
   html: z.string().max(100000).optional(),
+  source: z.enum(["manual", "automatic"]).optional(),
   sendConfirmation: z.boolean().optional(),
   confirmationText: z.string().max(20000).optional(),
   confirmationHtml: z.string().max(100000).optional(),
@@ -50,7 +53,9 @@ export const sendDocumentSchema = z.object({
   attachmentMimeType: z.string().max(120).optional(),
 }).strict();
 
-const boundedString = z.string().max(5_000);
+// Workspace payloads can include rich templates/signatures.
+// Keep generous per-field limits while enforcing total request cap in API routes.
+const boundedString = z.string().max(200_000);
 const boundedNumber = z.number().finite();
 const boundedBoolean = z.boolean();
 

@@ -7,77 +7,40 @@ import { renderEmailTemplate } from "@/lib/emailTemplates";
 import { htmlToPlainText, sanitizeHtmlEmail } from "@/lib/htmlEmail";
 import { calcTotals } from "@/store/useStore";
 
-const FALLBACK_DOCUMENT_SUBJECT_TEMPLATE = "Factuur {documentId} - LeafyLines";
-const FALLBACK_DOCUMENT_HTML_TEMPLATE = `
-<div style="margin:0;padding:24px;background:#f4f7fb;font-family:Arial,'Helvetica Neue',sans-serif;color:#1f2937;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e7eb;">
-    <tr>
-      <td style="padding:20px 24px;background:linear-gradient(135deg,#0f766e,#0b4f4a);color:#ffffff;">
-        <p style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;opacity:.9;">LeafyLines</p>
-        <h1 style="margin:8px 0 0;font-size:22px;line-height:1.3;font-weight:700;">Factuur {documentId}</h1>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:24px;">
-        <p style="margin:0 0 12px;font-size:15px;line-height:1.7;">Beste {clientName},</p>
-        <p style="margin:0 0 16px;font-size:15px;line-height:1.7;">
-          Bedankt voor de fijne samenwerking. In de bijlage vind je factuur
-          <strong>{documentId}</strong>.
-        </p>
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 18px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;">
-          <tr>
-            <td style="padding:14px 16px;">
-              <p style="margin:0 0 6px;font-size:13px;color:#4b5563;">Factuurdatum: <strong style="color:#111827;">{factuurdatum}</strong></p>
-              <p style="margin:0 0 6px;font-size:13px;color:#4b5563;">Vervaldatum: <strong style="color:#111827;">{vervaldatum}</strong></p>
-              <p style="margin:0;font-size:13px;color:#4b5563;">Totaalbedrag: <strong style="color:#0f766e;">EUR {bedrag}</strong></p>
-            </td>
-          </tr>
-        </table>
-        <p style="margin:0 0 16px;font-size:14px;line-height:1.7;color:#374151;">
-          Heb je nog vragen over deze factuur? Reageer gerust op deze e-mail.
-        </p>
-        <p style="margin:0;font-size:15px;line-height:1.7;">
-          Met vriendelijke groet,<br />
-          <strong>{contactName}</strong><br />
-          LeafyLines
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:14px 24px;background:#f8fafc;border-top:1px solid #e5e7eb;">
-        <p style="margin:0;font-size:12px;color:#6b7280;">Dit is een geautomatiseerd bericht vanuit LeafyLines.</p>
-      </td>
-    </tr>
-  </table>
-</div>
-`;
-const FALLBACK_CONFIRMATION_HTML_TEMPLATE = `
-<div style="margin:0;padding:24px;background:#f4f7fb;font-family:Arial,'Helvetica Neue',sans-serif;color:#1f2937;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e7eb;">
-    <tr>
-      <td style="padding:18px 24px;background:#111827;color:#ffffff;">
-        <p style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;opacity:.9;">LeafyLines</p>
-        <h2 style="margin:8px 0 0;font-size:20px;line-height:1.3;">Verzendbevestiging</h2>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:24px;">
-        <p style="margin:0 0 14px;font-size:15px;line-height:1.7;">
-          Factuur <strong>{documentId}</strong> is succesvol verzonden naar
-          <a href="mailto:{toEmail}" style="color:#0f766e;text-decoration:none;">{toEmail}</a>.
-        </p>
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;">
-          <tr>
-            <td style="padding:14px 16px;">
-              <p style="margin:0;font-size:13px;color:#4b5563;">Verstuurd op: <strong style="color:#111827;">{sentAt}</strong></p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</div>
-`;
+const FALLBACK_DOCUMENT_SUBJECT_TEMPLATE = "Factuur {documentId}";
+const FALLBACK_DOCUMENT_HTML_TEMPLATE =
+  "<p>Beste {clientName},</p><p>In de bijlage vind je factuur <strong>{documentId}</strong>.</p><p>Met vriendelijke groet,<br />{contactName}</p>";
+const FALLBACK_CONFIRMATION_HTML_TEMPLATE =
+  "<p>Document <strong>{documentId}</strong> is verzonden naar <a href=\"mailto:{toEmail}\">{toEmail}</a> op {sentAt}.</p>";
+
+type SessionPayload = { authenticated?: boolean; user?: { id?: string } };
+type WorkspacePayload = Pick<
+  ReturnType<typeof useStore.getState>,
+  "documents" | "clients" | "team" | "company" | "clientNotes" | "lineTemplates" | "emailIntegration" | "emailLogs"
+>;
+
+async function fetchSessionPayload(): Promise<SessionPayload | null> {
+  const response = await fetch("/api/auth/session", { cache: "no-store" });
+  if (!response.ok) return null;
+  return (await response.json()) as SessionPayload;
+}
+
+async function loadWorkspacePayloadFromDatabase(): Promise<{
+  settingsPayload: Record<string, unknown>;
+  clients: Client[];
+} | null> {
+  const [settingsResponse, clientsResponse] = await Promise.all([
+    fetch("/api/settings", { cache: "no-store" }),
+    fetch("/api/klanten", { cache: "no-store" }),
+  ]);
+  if (!settingsResponse.ok || !clientsResponse.ok) return null;
+  const settingsPayload = (await settingsResponse.json()) as Record<string, unknown>;
+  const clientsPayload = (await clientsResponse.json()) as { clients?: unknown[] };
+  return {
+    settingsPayload,
+    clients: (clientsPayload.clients ?? []) as Client[],
+  };
+}
 
 async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -96,6 +59,57 @@ async function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
+async function persistWorkspaceToDatabase(payload: WorkspacePayload): Promise<void> {
+  const settingsPayload = {
+    documents: payload.documents,
+    team: payload.team,
+    company: payload.company,
+    clientNotes: payload.clientNotes,
+    lineTemplates: payload.lineTemplates,
+    emailIntegration: payload.emailIntegration,
+  };
+  const [settingsResponse, clientsResponse] = await Promise.all([
+    fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settingsPayload),
+    }),
+    fetch("/api/klanten", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clients: payload.clients }),
+    }),
+  ]);
+  if (!settingsResponse.ok || !clientsResponse.ok) {
+    const [settingsBodyRaw, clientsBodyRaw] = await Promise.all([
+      settingsResponse.text().catch(() => ""),
+      clientsResponse.text().catch(() => ""),
+    ]);
+    const parseErrorBody = (value: string) => {
+      if (!value) return { message: "" };
+      try {
+        const parsed = JSON.parse(value) as { error?: string; detail?: string; errorId?: string };
+        return {
+          message: [parsed.error, parsed.detail].filter(Boolean).join(" | "),
+          errorId: parsed.errorId,
+        };
+      } catch {
+        return { message: value.slice(0, 500) };
+      }
+    };
+    const settingsParsed = parseErrorBody(settingsBodyRaw);
+    const clientsParsed = parseErrorBody(clientsBodyRaw);
+    console.error("Workspace autosave failed", {
+      settingsStatus: settingsResponse.status,
+      clientsStatus: clientsResponse.status,
+      settingsError: settingsParsed.message,
+      settingsErrorId: settingsParsed.errorId,
+      clientsError: clientsParsed.message,
+      clientsErrorId: clientsParsed.errorId,
+    });
+  }
+}
+
 export function DbSyncProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
@@ -106,21 +120,22 @@ export function DbSyncProvider({ children }: { children: React.ReactNode }) {
   const generateClientRecurringInvoices = useStore((state) => state.generateClientRecurringInvoices);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recurringRunRef = useRef(false);
+  const syncInFlightRef = useRef(false);
+  const syncQueuedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
     const loadSession = async () => {
-      const response = await fetch("/api/auth/session", { cache: "no-store" });
       if (!active) return;
-      if (!response.ok) {
+      const sessionPayload = await fetchSessionPayload();
+      if (!sessionPayload) {
         setIsAuthenticated(false);
         setAuthUserId(null);
         return;
       }
-      const data = (await response.json()) as { authenticated?: boolean; user?: { id?: string } };
-      const authenticated = data.authenticated === true;
+      const authenticated = sessionPayload.authenticated === true;
       setIsAuthenticated(authenticated);
-      setAuthUserId(authenticated ? String(data.user?.id || "") : null);
+      setAuthUserId(authenticated ? String(sessionPayload.user?.id || "") : null);
     };
     void loadSession();
     const sessionTimer = setInterval(() => {
@@ -149,16 +164,11 @@ export function DbSyncProvider({ children }: { children: React.ReactNode }) {
     if (workspaceLoadedUserId === authUserId) return;
 
     const loadWorkspace = async () => {
-      const [settingsResponse, clientsResponse] = await Promise.all([
-        fetch("/api/settings", { cache: "no-store" }),
-        fetch("/api/klanten", { cache: "no-store" }),
-      ]);
-      if (!settingsResponse.ok || !clientsResponse.ok) return;
-      const settingsPayload = (await settingsResponse.json()) as Record<string, unknown>;
-      const clientsPayload = (await clientsResponse.json()) as { clients?: unknown[] };
+      const workspacePayload = await loadWorkspacePayloadFromDatabase();
+      if (!workspacePayload) return;
       hydrateWorkspace({
-        ...settingsPayload,
-        clients: (clientsPayload.clients ?? []) as Client[],
+        ...workspacePayload.settingsPayload,
+        clients: workspacePayload.clients,
       });
       setWorkspaceLoadedUserId(authUserId);
     };
@@ -170,49 +180,39 @@ export function DbSyncProvider({ children }: { children: React.ReactNode }) {
     if (!isAuthenticated || !authUserId) return;
     if (workspaceLoadedUserId !== authUserId) return;
 
-    const syncWorkspaceToDatabase = async () => {
-      const payload = getWorkspacePayload();
-      const settingsPayload = {
-        documents: payload.documents,
-        team: payload.team,
-        company: payload.company,
-        clientNotes: payload.clientNotes,
-        lineTemplates: payload.lineTemplates,
-        emailIntegration: payload.emailIntegration,
-      };
-      const [settingsResponse, clientsResponse] = await Promise.all([
-        fetch("/api/settings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(settingsPayload),
-        }),
-        fetch("/api/klanten", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clients: payload.clients }),
-        }),
-      ]);
-      if (!settingsResponse.ok || !clientsResponse.ok) {
-        console.error("Workspace autosave failed", {
-          settingsStatus: settingsResponse.status,
-          clientsStatus: clientsResponse.status,
-        });
+    const flushWorkspaceSyncQueue = async () => {
+      if (syncInFlightRef.current) return;
+      syncInFlightRef.current = true;
+      try {
+        // Coalesce multiple rapid updates into ordered writes.
+        while (syncQueuedRef.current) {
+          syncQueuedRef.current = false;
+          const payload = getWorkspacePayload();
+          await persistWorkspaceToDatabase(payload);
+        }
+      } finally {
+        syncInFlightRef.current = false;
       }
+    };
+
+    const requestWorkspaceSync = () => {
+      syncQueuedRef.current = true;
+      void flushWorkspaceSyncQueue();
     };
 
     const unsubscribe = useStore.subscribe((state, previousState) => {
       if (state === previousState) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        void syncWorkspaceToDatabase();
+        requestWorkspaceSync();
       }, 1000);
     });
 
     // Force an initial sync and a periodic sync so data reaches DB even if
     // a subscription callback is skipped in edge cases.
-    void syncWorkspaceToDatabase();
+    requestWorkspaceSync();
     const periodicSyncTimer = setInterval(() => {
-      void syncWorkspaceToDatabase();
+      requestWorkspaceSync();
     }, 15_000);
 
     return () => {
@@ -231,14 +231,14 @@ export function DbSyncProvider({ children }: { children: React.ReactNode }) {
       recurringRunRef.current = true;
       try {
         generateRecurringDocuments();
-        const clientBasedIds = generateClientRecurringInvoices();
-        if (clientBasedIds.length === 0) return;
+        const generatedRecurringInvoices = generateClientRecurringInvoices();
+        if (generatedRecurringInvoices.length === 0) return;
 
         const state = useStore.getState();
-        for (const id of clientBasedIds) {
-          const doc = state.documents.find((d) => d.id === id);
+        for (const invoiceJob of generatedRecurringInvoices) {
+          const doc = state.documents.find((d) => d.id === invoiceJob.documentId);
           if (!doc) continue;
-          const client = state.clients.find((c) => c.company === doc.client);
+          const client = state.clients.find((c) => c.id === invoiceJob.clientId);
           if (!client?.recurringInvoice?.autoSend || !client.email) continue;
           const sentAt = new Date();
           const dueDateFromEmailSend = new Date(sentAt);
@@ -264,32 +264,41 @@ export function DbSyncProvider({ children }: { children: React.ReactNode }) {
           const signature = state.team.find((m) => m.name === doc.contact)?.signature;
           const pdfBlob = await generatePdfBlob(doc, state.company, signature);
           const attachmentBase64 = await blobToBase64(pdfBlob);
+          const subjectTemplate =
+            state.emailIntegration.documentSubjectTemplate?.trim() || FALLBACK_DOCUMENT_SUBJECT_TEMPLATE;
+          const documentHtmlTemplate =
+            state.emailIntegration.documentHtmlTemplate?.trim() || FALLBACK_DOCUMENT_HTML_TEMPLATE;
+          const renderedSubject = renderEmailTemplate(subjectTemplate, templateContext);
+          const renderedDocumentHtml = renderEmailTemplate(documentHtmlTemplate, templateContext);
+          const confirmationHtmlTemplate =
+            state.emailIntegration.confirmationHtmlTemplate?.trim() || FALLBACK_CONFIRMATION_HTML_TEMPLATE;
+          const renderedConfirmationHtml = confirmationHtmlTemplate
+            ? renderEmailTemplate(confirmationHtmlTemplate, {
+                documentId: doc.id,
+                clientName: doc.clientName || doc.client,
+                clientCompany: doc.client,
+                contactName: doc.contact || "LeafyLines",
+                toEmail: client.email,
+                sentAt: new Date().toLocaleString("nl-NL"),
+              })
+            : "";
           const response = await fetch("/api/send-document", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "same-origin",
             body: JSON.stringify({
               to: client.email,
+              source: "automatic",
               sendConfirmation: true,
-              subject: renderEmailTemplate(state.emailIntegration.documentSubjectTemplate || FALLBACK_DOCUMENT_SUBJECT_TEMPLATE, templateContext),
-              html: sanitizeHtmlEmail(renderEmailTemplate(state.emailIntegration.documentHtmlTemplate || FALLBACK_DOCUMENT_HTML_TEMPLATE, templateContext)),
-              text: htmlToPlainText(renderEmailTemplate(state.emailIntegration.documentHtmlTemplate || FALLBACK_DOCUMENT_HTML_TEMPLATE, templateContext)),
-              confirmationHtml: sanitizeHtmlEmail(renderEmailTemplate(state.emailIntegration.confirmationHtmlTemplate || FALLBACK_CONFIRMATION_HTML_TEMPLATE, {
-                documentId: doc.id,
-                clientName: doc.clientName || doc.client,
-                clientCompany: doc.client,
-                contactName: doc.contact || "LeafyLines",
-                toEmail: client.email,
-                sentAt: new Date().toLocaleString("nl-NL"),
-              })),
-              confirmationText: htmlToPlainText(renderEmailTemplate(state.emailIntegration.confirmationHtmlTemplate || FALLBACK_CONFIRMATION_HTML_TEMPLATE, {
-                documentId: doc.id,
-                clientName: doc.clientName || doc.client,
-                clientCompany: doc.client,
-                contactName: doc.contact || "LeafyLines",
-                toEmail: client.email,
-                sentAt: new Date().toLocaleString("nl-NL"),
-              })),
+              subject: renderedSubject,
+              html: sanitizeHtmlEmail(renderedDocumentHtml),
+              text: htmlToPlainText(renderedDocumentHtml),
+              ...(renderedConfirmationHtml
+                ? {
+                    confirmationHtml: sanitizeHtmlEmail(renderedConfirmationHtml),
+                    confirmationText: htmlToPlainText(renderedConfirmationHtml),
+                  }
+                : {}),
               attachmentBase64,
               attachmentFileName: `${doc.id}.pdf`,
               attachmentMimeType: "application/pdf",
@@ -306,11 +315,18 @@ export function DbSyncProvider({ children }: { children: React.ReactNode }) {
     };
 
     void runRecurringGeneration();
+    const runOnVisibilityOrFocus = () => {
+      void runRecurringGeneration();
+    };
+    window.addEventListener("focus", runOnVisibilityOrFocus);
+    document.addEventListener("visibilitychange", runOnVisibilityOrFocus);
     const timer = setInterval(() => {
       void runRecurringGeneration();
-    }, 30_000);
+    }, 5_000);
 
     return () => {
+      window.removeEventListener("focus", runOnVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", runOnVisibilityOrFocus);
       clearInterval(timer);
     };
   }, [isAuthenticated, authUserId, workspaceLoadedUserId, generateRecurringDocuments, generateClientRecurringInvoices]);

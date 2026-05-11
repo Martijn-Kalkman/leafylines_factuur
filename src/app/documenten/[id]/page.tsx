@@ -16,10 +16,27 @@ const FALLBACK_DOCUMENT_SUBJECT_TEMPLATE = "Factuur {documentId}";
 const FALLBACK_DOCUMENT_HTML_TEMPLATE = "<p>Beste {clientName},</p><p>In de bijlage vind je factuur <strong>{documentId}</strong>.</p><p>Met vriendelijke groet,<br />{contactName}</p>";
 const FALLBACK_CONFIRMATION_HTML_TEMPLATE = "<p>Document <strong>{documentId}</strong> is verzonden naar <a href=\"mailto:{toEmail}\">{toEmail}</a> op {sentAt}.</p>";
 
+async function encodePdfToBase64(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const commaIndex = result.indexOf(",");
+      if (commaIndex < 0) {
+        reject(new Error("Could not encode PDF attachment."));
+        return;
+      }
+      resolve(result.slice(commaIndex + 1));
+    };
+    reader.onerror = () => reject(new Error("Could not encode PDF attachment."));
+    reader.readAsDataURL(blob);
+  });
+}
+
 export default function DocDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { documents, clients, updateDocument, deleteDocument, company, convertQuoteToInvoice, team, emailIntegration } = useStore();
+  const { documents, clients, updateDocument, deleteDocument, company, convertQuoteToInvoice, team, emailIntegration, getWorkspacePayload } = useStore();
   const doc = documents.find((d) => d.id === id);
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -35,6 +52,23 @@ export default function DocDetail() {
   const defaultClient = suggestedClients.find((client) => !doc || client.company === doc.client) ?? suggestedClients[0];
   const selectedClient = suggestedClients.find((client) => client.id === selectedClientId);
   const defaultRecipient = (defaultClient?.email || "").trim();
+
+  const persistDocumentsNow = async (): Promise<boolean> => {
+    const payload = getWorkspacePayload();
+    const response = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        documents: payload.documents,
+        team: payload.team,
+        company: payload.company,
+        clientNotes: payload.clientNotes,
+        lineTemplates: payload.lineTemplates,
+        emailIntegration: payload.emailIntegration,
+      }),
+    });
+    return response.ok;
+  };
 
   useEffect(() => {
     let active = true;
@@ -56,11 +90,23 @@ export default function DocDetail() {
     };
   }, [doc, company, team]);
 
-  const handleDelete = () => {
+  const deleteCurrentDocument = () => {
     if (!doc) return;
     deleteDocument(doc.id);
-    showToast("Document verwijderd.", "success");
-    router.push("/documenten");
+  };
+
+  const handleDeleteConfirm = () => {
+    void (async () => {
+      deleteCurrentDocument();
+      const persisted = await persistDocumentsNow();
+      if (!persisted) {
+        showToast("Document lokaal verwijderd, maar DB-opslag mislukte.", "error");
+        router.push("/documenten");
+        return;
+      }
+      showToast("Document verwijderd.", "success");
+      router.push("/documenten");
+    })();
   };
 
   const handleConvert = () => {
@@ -89,7 +135,16 @@ export default function DocDetail() {
           <select
             className="w-full lg:w-40"
             value={doc.status}
-            onChange={(e) => updateDocument(doc.id, { status: e.target.value as DocStatus })}
+            onChange={(e) => {
+              const nextStatus = e.target.value as DocStatus;
+              void (async () => {
+                updateDocument(doc.id, { status: nextStatus });
+                const persisted = await persistDocumentsNow();
+                if (!persisted) {
+                  showToast("Status lokaal aangepast, maar DB-opslag mislukte.", "error");
+                }
+              })();
+            }}
           >
             {STATUSES.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
           </select>
@@ -150,7 +205,7 @@ export default function DocDetail() {
           message={`Weet je zeker dat je ${doc.id} wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.`}
           confirmLabel="Ja, verwijderen"
           onCancel={() => setDeleteOpen(false)}
-          onConfirm={() => { setDeleteOpen(false); handleDelete(); }}
+          onConfirm={() => { setDeleteOpen(false); handleDeleteConfirm(); }}
         />
         <ConfirmModal
           open={sendEmailOpen}
@@ -234,20 +289,7 @@ export default function DocDetail() {
                 } as const;
                 const signature = team.find((m) => m.name === doc.contact)?.signature;
                 const pdfBlob = await generatePdfBlob(doc, company, signature);
-                const attachmentBase64 = await new Promise<string>((resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const result = String(reader.result || "");
-                    const commaIndex = result.indexOf(",");
-                    if (commaIndex < 0) {
-                      reject(new Error("Could not encode PDF attachment."));
-                      return;
-                    }
-                    resolve(result.slice(commaIndex + 1));
-                  };
-                  reader.onerror = () => reject(new Error("Could not encode PDF attachment."));
-                  reader.readAsDataURL(pdfBlob);
-                });
+                const attachmentBase64 = await encodePdfToBase64(pdfBlob);
                 const payload = {
                   to,
                   sendConfirmation: true,

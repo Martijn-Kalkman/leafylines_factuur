@@ -6,22 +6,23 @@ import { useStore, calcTotals, DocStatus, DocType, daysOverdue } from "@/store/u
 import { useRouter } from "next/navigation";
 import { Search, Plus, Download } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
+import { generatePdf } from "@/lib/generatePdf";
 
 const STATUSES: DocStatus[] = ["concept", "verzonden", "openstaand", "betaald"];
 
 export default function Documenten() {
-  const { documents, generateRecurringDocuments, generateClientRecurringInvoices } = useStore();
+  const { documents, generateRecurringDocuments, generateClientRecurringInvoices, company, team } = useStore();
   const router = useRouter();
   const { showToast } = useToast();
   const [onlyOverdue, setOnlyOverdue] = useState(false);
   const runRecurringGeneration = async () => {
     const documentBasedCreated = generateRecurringDocuments();
-    const clientBasedIds = generateClientRecurringInvoices();
+    const clientBasedEntries = generateClientRecurringInvoices();
     let autoSentCount = 0;
-    if (clientBasedIds.length > 0) {
+    if (clientBasedEntries.length > 0) {
       const state = useStore.getState();
-      for (const id of clientBasedIds) {
-        const doc = state.documents.find((d) => d.id === id);
+      for (const entry of clientBasedEntries) {
+        const doc = state.documents.find((d) => d.id === entry.documentId);
         if (!doc) continue;
         const client = state.clients.find((c) => c.company === doc.client);
         if (!client?.recurringInvoice?.autoSend || !client.email) continue;
@@ -40,9 +41,9 @@ export default function Documenten() {
         }
       }
     }
-    if (documentBasedCreated || clientBasedIds.length || autoSentCount) {
+    if (documentBasedCreated || clientBasedEntries.length || autoSentCount) {
       showToast(
-        `Terugkerend verwerkt: ${documentBasedCreated + clientBasedIds.length} nieuw, ${autoSentCount} automatisch verzonden.`,
+        `Terugkerend verwerkt: ${documentBasedCreated + clientBasedEntries.length} nieuw, ${autoSentCount} automatisch verzonden.`,
         "success",
       );
     }
@@ -125,7 +126,7 @@ export default function Documenten() {
           <table>
             <thead>
               <tr className="border-b border-gray-100">
-                <th>Nummer</th><th>Type</th><th>Taal</th><th>Klant</th><th>Contact</th><th>Datum</th><th>Bedrag</th><th>Status</th>
+                <th>Nummer</th><th>Type</th><th>Taal</th><th>Klant</th><th>Contact</th><th>Datum</th><th>Bedrag</th><th>Status</th><th>PDF</th>
               </tr>
             </thead>
             <tbody>
@@ -142,11 +143,22 @@ export default function Documenten() {
                     <td className="text-xs text-[var(--gray3)]">{d.date}</td>
                     <td className="text-xs font-medium text-[var(--gray1)]">{fmt(total)}</td>
                     <td><StatusBadge status={d.status} /></td>
+                    <td>
+                      <button
+                        className="btn-outline inline-flex items-center gap-1 px-2 py-1 text-xs"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void generatePdf(d, company, team.find((member) => member.name === d.contact)?.signature);
+                        }}
+                      >
+                        <Download size={12} /> Download
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={8} className="py-8 text-center text-sm text-[var(--gray4)]">Geen documenten gevonden</td></tr>
+                <tr><td colSpan={9} className="py-8 text-center text-sm text-[var(--gray4)]">Geen documenten gevonden</td></tr>
               )}
             </tbody>
           </table>

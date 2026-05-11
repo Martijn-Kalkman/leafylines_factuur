@@ -34,6 +34,8 @@ function getAllowedOrigins(request: Request): string[] {
 
 export function requireSameOrigin(request: Request): NextResponse | null {
   const originHeader = request.headers.get("origin");
+  const fetchSite = (request.headers.get("sec-fetch-site") || "").trim().toLowerCase();
+  const isBrowserSameSite = fetchSite === "same-origin" || fetchSite === "same-site";
   const allowed = getAllowedOrigins(request);
   if (allowed.length === 0) {
     return NextResponse.json({ error: "Origin validation misconfigured." }, { status: 403 });
@@ -42,6 +44,9 @@ export function requireSameOrigin(request: Request): NextResponse | null {
   if (originHeader) {
     const origin = normalizeOrigin(originHeader);
     if (allowed.includes(origin)) return null;
+    // Reverse proxies can expose internal Host while browser Origin stays public.
+    // For authenticated same-site browser requests, allow via Fetch Metadata.
+    if (isBrowserSameSite) return null;
   }
 
   const refererHeader = request.headers.get("referer");
@@ -55,6 +60,12 @@ export function requireSameOrigin(request: Request): NextResponse | null {
   }
 
   if (!originHeader && !refererHeader) {
+    // Some production proxy/browser combinations strip Origin/Referer on same-origin
+    // requests (for example with strict referrer policy). Allow explicit same-origin
+    // fetch metadata as a safe fallback to avoid blocking legitimate saves.
+    if (isBrowserSameSite) {
+      return null;
+    }
     return NextResponse.json({ error: "Missing Origin/Referer header." }, { status: 403 });
   }
   return NextResponse.json({ error: "Origin not allowed." }, { status: 403 });

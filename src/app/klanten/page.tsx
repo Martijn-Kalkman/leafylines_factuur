@@ -29,17 +29,17 @@ function validateClient(c: Client): string[] {
 // ── Form ──────────────────────────────────────────────────────
 function ClientForm({ initial, onSave, onCancel }: {
   initial: Client;
-  onSave: (c: Client) => void;
+  onSave: (c: Client) => Promise<void> | void;
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<Client>(initial);
   const [errors, setErrors] = useState<string[]>([]);
   const set = (k: keyof Client, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const errs = validateClient(form);
     if (errs.length) { setErrors(errs); return; }
-    onSave(form);
+    await onSave(form);
   };
 
   return (
@@ -101,7 +101,7 @@ function ClientForm({ initial, onSave, onCancel }: {
 
 // ── Page ──────────────────────────────────────────────────────
 export default function Klanten() {
-  const { clients: raw, documents, addClient, deleteClient } = useStore();
+  const { clients: raw, documents, addClient, deleteClient, getWorkspacePayload } = useStore();
   const router = useRouter();
   const [hydrated, setHydrated] = useState(false);
   const [adding, setAdding]     = useState(false);
@@ -113,6 +113,21 @@ export default function Klanten() {
   // Wait for zustand persist to rehydrate
   useEffect(() => { setHydrated(true); }, []);
   const clients = hydrated ? (raw ?? []) : [];
+
+  const persistClientsNow = async (
+    clientsOverride?: ReturnType<typeof getWorkspacePayload>["clients"],
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const payload = getWorkspacePayload();
+    const clientsPayload = clientsOverride ?? payload.clients;
+    const response = await fetch("/api/klanten", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clients: clientsPayload }),
+    });
+    if (response.ok) return { ok: true };
+    const responseText = await response.text().catch(() => "");
+    return { ok: false, error: responseText || `HTTP ${response.status}` };
+  };
 
   // ── Export JSON ───────────────────────────────────────────
   const handleExport = () => {
@@ -137,6 +152,7 @@ export default function Klanten() {
         const parsed = JSON.parse(ev.target?.result as string);
         if (!Array.isArray(parsed)) throw new Error("Bestand moet een array zijn.");
         let count = 0;
+        const importedClients: Client[] = [];
         for (const item of parsed) {
           if (typeof item.company !== "string" || !item.company.trim())
             throw new Error(`Item mist een geldige 'company' veld.`);
@@ -151,11 +167,20 @@ export default function Klanten() {
             phone:       item.phone       ?? "",
             notes:       item.notes       ?? "",
           };
+          importedClients.push(client);
           addClient(client);
           count++;
         }
-        setImportSuccess(`${count} klant${count !== 1 ? "en" : ""} geïmporteerd.`);
-        showToast(`${count} klant${count !== 1 ? "en" : ""} geïmporteerd.`, "success");
+        void (async () => {
+          const persisted = await persistClientsNow([...clients, ...importedClients]);
+          if (!persisted.ok) {
+            setImportError(`Import lokaal geslaagd, maar DB-opslag van klanten mislukte. ${persisted.error || ""}`.trim());
+            showToast(`Import lokaal geslaagd, maar DB-opslag mislukte. ${persisted.error || ""}`.trim(), "error");
+            return;
+          }
+          setImportSuccess(`${count} klant${count !== 1 ? "en" : ""} geïmporteerd.`);
+          showToast(`${count} klant${count !== 1 ? "en" : ""} geïmporteerd.`, "success");
+        })();
       } catch (err: unknown) {
         setImportError(`Import mislukt: ${err instanceof Error ? err.message : "Onbekende fout."}`);
         showToast("Import mislukt. Controleer het JSON-bestand.", "error");
@@ -217,7 +242,16 @@ export default function Klanten() {
             <p style={{ fontSize: 14, fontWeight: 600, color: "var(--gray2)", marginBottom: 16 }}>Nieuwe klant toevoegen</p>
             <ClientForm
               initial={empty()}
-              onSave={(c) => { addClient(c); setAdding(false); showToast("Klant toegevoegd.", "success"); }}
+              onSave={async (c) => {
+                addClient(c);
+                const persisted = await persistClientsNow([...clients, c]);
+                if (!persisted.ok) {
+                  showToast(`Klant lokaal toegevoegd, maar DB-opslag mislukte. ${persisted.error || ""}`.trim(), "error");
+                  return;
+                }
+                setAdding(false);
+                showToast("Klant toegevoegd.", "success");
+              }}
               onCancel={() => setAdding(false)}
             />
           </div>
@@ -281,11 +315,19 @@ export default function Klanten() {
           confirmLabel="Ja, verwijderen"
           onCancel={() => setDeleteClientId(null)}
           onConfirm={() => {
-            if (deleteClientId) {
-              deleteClient(deleteClientId);
-              showToast("Klant verwijderd.", "success");
-            }
-            setDeleteClientId(null);
+            void (async () => {
+              if (deleteClientId) {
+                deleteClient(deleteClientId);
+                const persisted = await persistClientsNow(clients.filter((client) => client.id !== deleteClientId));
+                if (!persisted.ok) {
+                  showToast(`Klant lokaal verwijderd, maar DB-opslag mislukte. ${persisted.error || ""}`.trim(), "error");
+                  setDeleteClientId(null);
+                  return;
+                }
+                showToast("Klant verwijderd.", "success");
+              }
+              setDeleteClientId(null);
+            })();
           }}
         />
       </main>

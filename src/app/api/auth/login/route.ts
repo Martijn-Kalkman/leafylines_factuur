@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   }
 
   const { email, password } = parsed.data;
-  const adminEmails = (process.env.ADMIN_EMAILS || "kalkmanwm@gmail.com")
+  const adminEmails = (process.env.ADMIN_EMAILS || "")
     .split(",")
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
@@ -37,7 +37,8 @@ export async function POST(request: Request) {
   if (!userDoc) {
     return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
   }
-  if (adminEmails.includes(email) && userDoc.role !== "admin") {
+  // Allow login even when ADMIN_EMAILS is missing; this only disables automatic role elevation.
+  if (adminEmails.length > 0 && adminEmails.includes(email) && userDoc.role !== "admin") {
     userDoc.role = "admin";
     await userDoc.save();
   }

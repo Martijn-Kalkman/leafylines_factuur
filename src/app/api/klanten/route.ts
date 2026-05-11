@@ -38,18 +38,31 @@ function sanitizeClientRecord(input: Record<string, unknown>): PersistedClient {
   };
 }
 
+function createErrorId(): string {
+  return `klanten-sync-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export async function GET() {
   const user = await requireAuth();
   if (user instanceof NextResponse) return user;
   const rate = await checkRateLimit(`klanten:get:${user.id}`, 120, 60 * 1000);
   if (!rate.allowed) return NextResponse.json({ error: "Too many klanten requests." }, { status: 429 });
 
-  await connectToDatabase();
-  const clients = await KlantModel.find()
-    .sort({ company: 1 })
-    .select("id company contactName address city country email phone notes recurringInvoice -_id")
-    .lean();
-  return NextResponse.json({ clients });
+  try {
+    await connectToDatabase();
+    const clients = await KlantModel.find()
+      .sort({ company: 1 })
+      .select("id company contactName address city country email phone notes recurringInvoice -_id")
+      .lean();
+    return NextResponse.json({ clients });
+  } catch (error) {
+    const errorId = createErrorId();
+    console.error(`[${errorId}] klanten.get failed`, error);
+    return NextResponse.json(
+      { error: "Failed to load clients.", errorId },
+      { status: 500 },
+    );
+  }
 }
 
 export async function PUT(request: Request) {
@@ -82,31 +95,52 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Clients payload too large." }, { status: 413 });
   }
 
-  await connectToDatabase();
-  if (clients.length === 0) {
-    await KlantModel.deleteMany({});
-  } else {
-    await KlantModel.bulkWrite(
-      clients.map((client) => ({
-        updateOne: {
-          filter: { id: client.id },
-          update: { $set: client },
-          upsert: true,
-        },
-      })),
-      { ordered: true },
-    );
-    const incomingIds = new Set(clients.map((client) => client.id));
-    const existingClients = await KlantModel.find()
-      .select("id -_id")
-      .lean<{ id?: string }[]>();
-    const idsToDelete = existingClients
-      .map((client) => (typeof client.id === "string" ? client.id : ""))
-      .filter((id) => id && !incomingIds.has(id));
-    if (idsToDelete.length > 0) {
-      await Promise.all(idsToDelete.map((id) => KlantModel.deleteOne({ id })));
+  try {
+    await connectToDatabase();
+    if (clients.length === 0) {
+      await KlantModel.deleteMany({});
+    } else {
+      await KlantModel.bulkWrite(
+        clients.map((client) => ({
+          updateOne: {
+            filter: { id: client.id },
+            update: { $set: client },
+            upsert: true,
+          },
+        })),
+        { ordered: true },
+      );
+      const incomingIds = new Set(clients.map((client) => client.id));
+      const existingClients = await KlantModel.find()
+        .select("id -_id")
+        .lean<{ id?: string }[]>();
+      const idsToDelete = existingClients
+        .map((client) => (typeof client.id === "string" ? client.id : ""))
+        .filter((id) => id && !incomingIds.has(id));
+      if (idsToDelete.length > 0) {
+        await Promise.all(idsToDelete.map((id) => KlantModel.deleteOne({ id })));
+      }
     }
+    try {
+      await appendAuditLog(user.id, "klanten.sync", { payloadSize, count: clients.length });
+    } catch (auditError) {
+      console.warn("klanten.sync audit log failed", auditError);
+    }
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    const errorId = createErrorId();
+    console.error(`[${errorId}] klanten.put failed`, {
+      error,
+      payloadSize,
+      clientsCount: clients.length,
+    });
+    return NextResponse.json(
+      {
+        error: "Failed to save clients.",
+        detail: error instanceof Error ? error.message : "Unknown error.",
+        errorId,
+      },
+      { status: 500 },
+    );
   }
-  await appendAuditLog(user.id, "klanten.sync", { payloadSize, count: clients.length });
-  return NextResponse.json({ ok: true });
 }

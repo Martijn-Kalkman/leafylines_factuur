@@ -30,6 +30,7 @@ export interface Client {
     nextDate: string;
     nextTime?: string;
     autoSend: boolean;
+    sourceDocumentId?: string | null;
   };
 }
 
@@ -220,7 +221,7 @@ interface Store {
   markReminderSent: (id: string) => void;
   convertQuoteToInvoice: (id: string) => string | null;
   generateRecurringDocuments: (today?: string) => number;
-  generateClientRecurringInvoices: (today?: string) => string[];
+  generateClientRecurringInvoices: (today?: string) => Array<{ documentId: string; clientId: string }>;
   // Integrations
   updateEmailIntegration: (integration: Partial<EmailIntegration>) => void;
   addEmailLog: (entry: Omit<EmailLog, "id" | "createdAt">) => void;
@@ -254,6 +255,13 @@ function addMonths(dateString: string, months: number): string {
   const next = new Date(source);
   next.setMonth(next.getMonth() + months);
   return next.toISOString().slice(0, 10);
+}
+
+function cloneLineItemsForRecurring(items: LineItem[], nextDocumentId: string): LineItem[] {
+  return items.map((item, index) => ({
+    ...item,
+    id: `rec-${nextDocumentId}-${index + 1}`,
+  }));
 }
 
 function isRecurringDue(nextDate: string, nextTime: string | undefined, now: Date): boolean {
@@ -397,7 +405,7 @@ export const useStore = create<Store>()(
         return created;
       },
       generateClientRecurringInvoices: (today = new Date().toISOString().slice(0, 10)) => {
-        const createdIds: string[] = [];
+        const createdInvoices: Array<{ documentId: string; clientId: string }> = [];
         const now = new Date();
         set((s) => {
           const toAdd: Document[] = [];
@@ -405,35 +413,59 @@ export const useStore = create<Store>()(
             const recurring = client.recurringInvoice;
             if (!recurring?.enabled || !recurring.nextDate) return client;
             if (!isRecurringDue(recurring.nextDate, recurring.nextTime, now)) return client;
-            const amount = Number(recurring.amount) || 0;
-            if (amount <= 0) return client;
             const newId = genId([...s.documents, ...toAdd]);
-            const description = recurring.description?.trim() || `Periodieke factuur voor ${client.company}`;
-            toAdd.push({
-              id: newId,
-              type: "factuur",
-              lang: "nl",
-              status: "concept",
-              date: today,
-              dueDate: addMonths(today, 0),
-              contact: s.team[0]?.name ?? "",
-              phone: s.team[0]?.phone ?? "",
-              client: client.company,
-              clientName: client.contactName,
-              clientAddress: client.address,
-              clientCity: client.city,
-              clientCountry: client.country,
-              items: [{ id: `rec-${newId}`, product: "Periodieke factuur", description, price: amount }],
-              btwRate: 21,
-              notes: "Automatisch aangemaakt op basis van klant-instelling.",
-              recurring: null,
-              recurringNextDate: null,
-              reminderSent: false,
-              reminderSentAt: null,
-              timeEntries: [],
-              timeHourlyRate: s.company.defaultHourlyRate,
-            });
-            createdIds.push(newId);
+            const selectedTemplate =
+              recurring.sourceDocumentId
+                ? s.documents.find((document) => document.id === recurring.sourceDocumentId && document.type === "factuur")
+                : null;
+            if (selectedTemplate) {
+              toAdd.push({
+                ...selectedTemplate,
+                id: newId,
+                status: "concept",
+                date: today,
+                dueDate: addMonths(today, 0),
+                client: client.company,
+                clientName: client.contactName,
+                clientAddress: client.address,
+                clientCity: client.city,
+                clientCountry: client.country,
+                items: cloneLineItemsForRecurring(selectedTemplate.items, newId),
+                reminderSent: false,
+                reminderSentAt: null,
+                recurring: null,
+                recurringNextDate: null,
+              });
+            } else {
+              const amount = Number(recurring.amount) || 0;
+              if (amount <= 0) return client;
+              const description = recurring.description?.trim() || `Periodieke factuur voor ${client.company}`;
+              toAdd.push({
+                id: newId,
+                type: "factuur",
+                lang: "nl",
+                status: "concept",
+                date: today,
+                dueDate: addMonths(today, 0),
+                contact: s.team[0]?.name ?? "",
+                phone: s.team[0]?.phone ?? "",
+                client: client.company,
+                clientName: client.contactName,
+                clientAddress: client.address,
+                clientCity: client.city,
+                clientCountry: client.country,
+                items: [{ id: `rec-${newId}`, product: "Periodieke factuur", description, price: amount }],
+                btwRate: 21,
+                notes: "Automatisch aangemaakt op basis van klant-instelling.",
+                recurring: null,
+                recurringNextDate: null,
+                reminderSent: false,
+                reminderSentAt: null,
+                timeEntries: [],
+                timeHourlyRate: s.company.defaultHourlyRate,
+              });
+            }
+            createdInvoices.push({ documentId: newId, clientId: client.id });
             const monthStep = recurring.frequency === "monthly" ? 1 : recurring.frequency === "quarterly" ? 3 : 12;
             return {
               ...client,
@@ -446,7 +478,7 @@ export const useStore = create<Store>()(
           });
           return { clients: nextClients, documents: [...s.documents, ...toAdd] };
         });
-        return createdIds;
+        return createdInvoices;
       },
       updateEmailIntegration: (u) => set((s) => ({ emailIntegration: { ...s.emailIntegration, ...u } })),
       addEmailLog: (entry) => set((s) => ({

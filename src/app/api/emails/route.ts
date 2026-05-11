@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db/mongodb";
 import { EmailLogModel } from "@/lib/db/models/EmailLog";
-import { requireAuth } from "@/lib/security/authz";
+import { requireAdmin } from "@/lib/security/authz";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 
 export async function GET() {
-  const user = await requireAuth();
-  if (user instanceof NextResponse) return user;
-  const rate = await checkRateLimit(`emails:get:${user.id}`, 120, 60 * 1000);
+  const admin = await requireAdmin();
+  if (admin instanceof NextResponse) return admin;
+  const rate = await checkRateLimit(`emails:get:${admin.id}`, 120, 60 * 1000);
   if (!rate.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429 });
 
   await connectToDatabase();
@@ -20,6 +20,7 @@ export async function GET() {
       subject: log.subject,
       to: log.to,
       kind: log.kind,
+      source: (log as { source?: "manual" | "automatic" }).source || "manual",
       status: log.status,
       error: log.error || "",
       sentBy: log.sentBy || "",

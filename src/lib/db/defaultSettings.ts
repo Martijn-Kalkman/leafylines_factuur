@@ -24,11 +24,13 @@ export const defaultSettingsData = {
     fromEmail: "",
     apiKey: "",
     confirmationEmails: [],
-    documentSubjectTemplate: "",
-    documentBodyTemplate: "",
-    confirmationBodyTemplate: "",
-    documentHtmlTemplate: "",
-    confirmationHtmlTemplate: "",
+    documentSubjectTemplate: "Factuur {documentId}",
+    documentBodyTemplate: "Beste {clientName}, in de bijlage vind je factuur {documentId}.",
+    confirmationBodyTemplate: "Document {documentId} is verzonden naar {toEmail} op {sentAt}.",
+    documentHtmlTemplate:
+      "<p>Beste {clientName},</p><p>In de bijlage vind je factuur <strong>{documentId}</strong>.</p><p>Met vriendelijke groet,<br />{contactName}</p>",
+    confirmationHtmlTemplate:
+      "<p>Document <strong>{documentId}</strong> is verzonden naar <a href=\"mailto:{toEmail}\">{toEmail}</a> op {sentAt}.</p>",
     templatePresets: [],
     selectedTemplatePresetId: "",
   },

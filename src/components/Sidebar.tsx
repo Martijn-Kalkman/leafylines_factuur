@@ -2,15 +2,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, FileText, FilePlus, Users, Settings, Mail, ShieldCheck, UserPlus, Menu, X } from "lucide-react";
+import { LayoutDashboard, FileText, FilePlus, Users, Settings, Mail, CalendarClock, ShieldCheck, UserPlus, Menu, X } from "lucide-react";
 import Image from "next/image";
 
 const nav = [
-  { href: "/dashboard",  icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/documenten", icon: FileText,         label: "Documenten" },
-  { href: "/klanten",    icon: Users,            label: "Klanten" },
-  { href: "/nieuw",      icon: FilePlus,         label: "Nieuw" },
-  { href: "/emails",     icon: Mail,             label: "Emails" },
+  { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/documenten", icon: FileText, label: "Documenten" },
+  { href: "/klanten", icon: Users, label: "Klanten" },
+  { href: "/nieuw", icon: FilePlus, label: "Nieuw" },
+  { href: "/emails", icon: Mail, label: "Emails" },
+  { href: "/email-planning", icon: CalendarClock, label: "Gepland" },
 ];
 
 export default function Sidebar() {
@@ -36,7 +37,7 @@ export default function Sidebar() {
   }, []);
   useEffect(() => {
     setMobileOpen(false);
-  }, [path]);
+  }, [path]); 
   const isExactActive = (href: string) => path === href;
   const isSectionActive = (href: string) => path === href || path.startsWith(`${href}/`);
 
@@ -49,11 +50,10 @@ export default function Sidebar() {
             <Link
               key={href}
               href={href}
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${
-                active
-                  ? "bg-[var(--primary)] text-[var(--primary-ink)]"
-                  : "text-[var(--gray2)] hover:bg-[var(--surface-muted)]"
-              }`}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${active
+                  ? "bg-(--primary) text-(--primary-ink)"
+                  : "text-(--gray2) hover:bg-(--surface-muted)"
+                }`}
             >
               <Icon size={16} />{label}
             </Link>
@@ -61,11 +61,10 @@ export default function Sidebar() {
         })}
         <Link
           href="/profile"
-          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${
-            isSectionActive("/profile")
-              ? "bg-[var(--primary)] text-[var(--primary-ink)]"
+          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${isSectionActive("/profile")
+              ? "bg-(--primary) text-[var(--primary-ink)]"
               : "text-[var(--gray2)] hover:bg-[var(--surface-muted)]"
-          }`}
+            }`}
         >
           <Users size={16} />Profiel
         </Link>
@@ -76,21 +75,19 @@ export default function Sidebar() {
             </p>
             <Link
               href="/users"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${
-                isExactActive("/users")
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${isExactActive("/users")
                   ? "bg-[var(--primary)] text-[var(--primary-ink)]"
                   : "text-[var(--gray2)] hover:bg-[var(--surface-muted)]"
-              }`}
+                }`}
             >
               <ShieldCheck size={16} />Users
             </Link>
             <Link
               href="/users/register"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${
-                isSectionActive("/users/register")
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${isSectionActive("/users/register")
                   ? "bg-[var(--primary)] text-[var(--primary-ink)]"
                   : "text-[var(--gray2)] hover:bg-[var(--surface-muted)]"
-              }`}
+                }`}
             >
               <UserPlus size={16} />Register
             </Link>
@@ -101,11 +98,10 @@ export default function Sidebar() {
       <div className="border-t border-[var(--border-soft)] p-3">
         <Link
           href="/instellingen"
-          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${
-            isSectionActive("/instellingen")
+          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition duration-200 ${isSectionActive("/instellingen")
               ? "bg-[var(--primary)] text-[var(--primary-ink)]"
               : "text-[var(--gray3)] hover:bg-[var(--surface-muted)]"
-          }`}
+            }`}
         >
           <Settings size={16} />Instellingen
         </Link>
